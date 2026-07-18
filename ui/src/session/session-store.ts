@@ -5,6 +5,7 @@ import { api } from "../lib/tauri.ts";
 import type {
   ActivityItem,
   AppSettings,
+  AvailableModel,
   ModelRoleAssignment,
   SessionInfo,
   SubagentInfo,
@@ -18,8 +19,12 @@ export interface SessionStore {
   settings: AppSettings | null;
   modelRoles: ModelRoleAssignment[];
   modelRolesConfigPath: string | null;
+  availableModels: AvailableModel[];
+  availableModelsLoaded: boolean;
   loadSettings: () => Promise<void>;
   loadModelRoles: () => Promise<void>;
+  loadAvailableModels: () => Promise<void>;
+  setModelRole: (role: string, selector: string) => Promise<boolean>;
   saveSettings: (settings: AppSettings) => Promise<boolean>;
   sessions: SessionInfo[];
   activeSessionId: string | null;
@@ -40,6 +45,7 @@ export interface SessionStore {
   send: (message: string, streamingBehavior?: string) => Promise<boolean>;
   abort: () => Promise<void>;
   applyOmpEvent: (sessionId: string, event: unknown) => void;
+  updateAssistantText: (sessionId: string, itemId: string, text: string) => void;
   markExited: (sessionId: string) => void;
   clearError: () => void;
 }
@@ -297,6 +303,8 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
   settings: null,
   modelRoles: [],
   modelRolesConfigPath: null,
+  availableModels: [],
+  availableModelsLoaded: false,
   sessions: [],
   activeSessionId: null,
   transcripts: {},
@@ -309,6 +317,7 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
 
   bootstrap: async () => {
     void get().loadModelRoles();
+    void get().loadAvailableModels();
     try {
       const [settings, sessions] = await Promise.all([
         api.getSettings(),
@@ -348,6 +357,31 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
       // Roles are supplemental chrome; don't block the app.
       console.warn("Unable to load model roles", error);
       set({ modelRoles: [], modelRolesConfigPath: null });
+    }
+  },
+
+  loadAvailableModels: async () => {
+    try {
+      const models = await api.listAvailableModels();
+      set({ availableModels: models, availableModelsLoaded: true });
+    } catch (error) {
+      console.warn("Unable to load available models", error);
+      set({ availableModels: [], availableModelsLoaded: true });
+    }
+  },
+
+  setModelRole: async (role, selector) => {
+    try {
+      const snapshot = await api.setModelRole(role, selector);
+      set({
+        modelRoles: snapshot.roles ?? [],
+        modelRolesConfigPath: snapshot.configPath ?? null,
+        error: null,
+      });
+      return true;
+    } catch (error) {
+      set({ error: `Unable to set ${role} model: ${errorMessage(error)}` });
+      return false;
     }
   },
 
@@ -694,6 +728,23 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
       return {
         transcripts: { ...state.transcripts, [sessionId]: nextTranscript },
         activity: { ...state.activity, [sessionId]: nextActivity },
+      };
+    });
+  },
+
+  updateAssistantText: (sessionId, itemId, text) => {
+    set((state) => {
+      const current = state.transcripts[sessionId];
+      if (!current) return state;
+      let changed = false;
+      const next = current.map((item) => {
+        if (item.kind !== "assistant" || item.id !== itemId) return item;
+        changed = true;
+        return { ...item, text };
+      });
+      if (!changed) return state;
+      return {
+        transcripts: { ...state.transcripts, [sessionId]: next },
       };
     });
   },
