@@ -1,0 +1,340 @@
+import type { ReactNode } from "react";
+
+import { useLayoutStore, type PanelId } from "./layout-store.ts";
+import { LeftRail, RightRail, type RailTarget } from "./rails.tsx";
+import { useSessionStore } from "../session/session-store.ts";
+
+const panelMeta: Record<PanelId, { label: string; eyebrow: string }> = {
+  sessions: { label: "Sessions", eyebrow: "Workspace" },
+  project: { label: "Project", eyebrow: "Context" },
+  settings: { label: "Settings", eyebrow: "Preferences" },
+  terminal: { label: "Terminal", eyebrow: "Local shell" },
+  plan: { label: "Plan", eyebrow: "Execution" },
+  activity: { label: "Activity", eyebrow: "Timeline" },
+  subagents: { label: "Subagents", eyebrow: "Delegation" },
+};
+
+const rightPanels: PanelId[] = ["plan", "activity", "subagents"];
+
+const EmptyPanel = ({ children }: { children: ReactNode }) => (
+  <div className="panel-empty">
+    <span className="panel-empty__rule" />
+    <p>{children}</p>
+  </div>
+);
+
+const PanelBody = ({ panel }: { panel: PanelId }) => {
+  const sessions = useSessionStore((state) => state.sessions);
+  const activeSessionId = useSessionStore((state) => state.activeSessionId);
+  const settings = useSessionStore((state) => state.settings);
+  const todosBySession = useSessionStore((state) => state.todos);
+  const activityBySession = useSessionStore((state) => state.activity);
+  const subagentsBySession = useSessionStore((state) => state.subagents);
+  const todos = activeSessionId
+    ? (todosBySession[activeSessionId] ?? [])
+    : [];
+  const activity = activeSessionId
+    ? (activityBySession[activeSessionId] ?? [])
+    : [];
+  const subagents = activeSessionId
+    ? (subagentsBySession[activeSessionId] ?? [])
+    : [];
+  const setActive = useSessionStore((state) => state.setActive);
+  const activeSession = sessions.find(
+    (session) => session.id === activeSessionId,
+  );
+
+  switch (panel) {
+    case "sessions":
+      return sessions.length > 0 ? (
+        <div className="session-list">
+          {sessions.map((session) => (
+            <button
+              type="button"
+              className={`session-row${session.id === activeSessionId ? " is-current" : ""}`}
+              key={session.id}
+              onClick={() => setActive(session.id)}
+            >
+              <span className={`status-dot status-dot--${session.status}`} />
+              <span className="session-row__copy">
+                <strong>{session.title}</strong>
+                <small>{session.cwd}</small>
+              </span>
+              <span className="session-row__status">{session.status}</span>
+            </button>
+          ))}
+        </div>
+      ) : (
+        <EmptyPanel>Sessions will appear here after a project is opened.</EmptyPanel>
+      );
+
+    case "project":
+      return activeSession ? (
+        <dl className="detail-list">
+          <div>
+            <dt>Working directory</dt>
+            <dd>{activeSession.cwd}</dd>
+          </div>
+          <div>
+            <dt>Profile</dt>
+            <dd>{activeSession.profile ?? "Default"}</dd>
+          </div>
+          <div>
+            <dt>Runtime</dt>
+            <dd>{activeSession.status}</dd>
+          </div>
+        </dl>
+      ) : (
+        <EmptyPanel>Project context is available once a session is active.</EmptyPanel>
+      );
+
+    case "settings":
+      return (
+        <dl className="detail-list">
+          <div>
+            <dt>Approval mode</dt>
+            <dd>{settings?.approvalMode ?? "yolo"}</dd>
+          </div>
+          <div>
+            <dt>Default model</dt>
+            <dd>{settings?.defaultModel ?? "OMP default"}</dd>
+          </div>
+          <div>
+            <dt>Theme</dt>
+            <dd>{settings?.theme ?? "Dark"}</dd>
+          </div>
+        </dl>
+      );
+
+    case "terminal":
+      return (
+        <div className="terminal-placeholder" aria-label="Terminal placeholder">
+          <span>$</span>
+          <p>Terminal connection is not enabled in this foundation build.</p>
+        </div>
+      );
+
+    case "plan":
+      return todos.length > 0 ? (
+        <div className="plan-list">
+          {todos.map((phase) => (
+            <section key={phase.id}>
+              <h3>{phase.name}</h3>
+              <ul>
+                {phase.tasks.map((task) => (
+                  <li key={task.id}>
+                    <span className={`task-state task-state--${task.status}`} />
+                    <span>{task.content}</span>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          ))}
+        </div>
+      ) : (
+        <EmptyPanel>OMP task phases will collect here during a run.</EmptyPanel>
+      );
+
+    case "activity":
+      return activity.length > 0 ? (
+        <ol className="activity-list">
+          {activity.map((item) => (
+            <li key={item.id}>
+              <time>{new Date(item.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</time>
+              <span>{item.text}</span>
+            </li>
+          ))}
+        </ol>
+      ) : (
+        <EmptyPanel>Tool execution will form a quiet timeline here.</EmptyPanel>
+      );
+
+    case "subagents":
+      return subagents.length > 0 ? (
+        <div className="subagent-count">
+          <strong>{subagents.length}</strong>
+          <span>subagent{subagents.length === 1 ? "" : "s"} reporting</span>
+        </div>
+      ) : (
+        <EmptyPanel>Delegated agents will report progress here.</EmptyPanel>
+      );
+  }
+};
+
+interface PanelHeaderProps {
+  panel: PanelId;
+  pinned: boolean;
+  onPin: () => void;
+  onClose: () => void;
+}
+
+const PanelHeader = ({ panel, pinned, onPin, onClose }: PanelHeaderProps) => {
+  const meta = panelMeta[panel];
+
+  return (
+    <header className="panel-header">
+      <div>
+        <span>{meta.eyebrow}</span>
+        <h2>{meta.label}</h2>
+      </div>
+      <div className="panel-header__actions">
+        <button
+          type="button"
+          className={pinned ? "is-active" : ""}
+          title={pinned ? `Unpin ${meta.label}` : `Pin ${meta.label}`}
+          aria-label={pinned ? `Unpin ${meta.label}` : `Pin ${meta.label}`}
+          aria-pressed={pinned}
+          onClick={onPin}
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="m8 4 8 0-1 5 3 3v2H6v-2l3-3-1-5ZM12 14v6" />
+          </svg>
+        </button>
+        <button
+          type="button"
+          title={`Close ${meta.label}`}
+          aria-label={`Close ${meta.label}`}
+          onClick={onClose}
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="m6 6 12 12M18 6 6 18" />
+          </svg>
+        </button>
+      </div>
+    </header>
+  );
+};
+
+export const Shell = () => {
+  const drawer = useLayoutStore((state) => state.drawer);
+  const pinned = useLayoutStore((state) => state.pinned);
+  const closeDrawer = useLayoutStore((state) => state.closeDrawer);
+  const toggleDrawer = useLayoutStore((state) => state.toggleDrawer);
+  const togglePin = useLayoutStore((state) => state.togglePin);
+  const sessions = useSessionStore((state) => state.sessions);
+  const activeSessionId = useSessionStore((state) => state.activeSessionId);
+  const settings = useSessionStore((state) => state.settings);
+  const activeSession = sessions.find(
+    (session) => session.id === activeSessionId,
+  );
+  const activeTargets: RailTarget[] = [
+    ...(drawer ? [drawer] : ["chat" as const]),
+    ...pinned,
+  ];
+
+  const selectRail = (target: RailTarget) => {
+    if (target === "chat") {
+      closeDrawer();
+      return;
+    }
+    toggleDrawer(target);
+  };
+
+  const pinDrawer = () => {
+    if (!drawer) return;
+    const alreadyPinned = pinned.includes(drawer);
+    togglePin(drawer);
+    if (!alreadyPinned) closeDrawer();
+  };
+
+  return (
+    <div className="app-shell">
+      <header className="top-bar">
+        <div className="brand">
+          <span className="brand__sigil" aria-hidden="true">
+            O
+          </span>
+          <span>OMP Desktop</span>
+        </div>
+        <div className="session-heading">
+          <span className={`status-dot status-dot--${activeSession?.status ?? "idle"}`} />
+          <strong>{activeSession?.title ?? "No active session"}</strong>
+          <span>{activeSession?.cwd ?? "Open a project to begin"}</span>
+        </div>
+        <div className="runtime-strip" aria-label="Runtime details">
+          <span>{settings?.defaultModel ?? "model —"}</span>
+          <span>{settings?.defaultThinking ?? "thinking —"}</span>
+          <span>ctx —</span>
+          <button type="button" title="Command palette · ⌘K" disabled>
+            <kbd>⌘K</kbd>
+          </button>
+        </div>
+      </header>
+
+      <div className="shell-workspace">
+        <LeftRail active={activeTargets} onSelect={selectRail} />
+
+        <div className="stage">
+          <main className="chat" aria-label="Chat transcript">
+            <div className="transcript-empty">
+              <div className="transcript-empty__glyph" aria-hidden="true">
+                <span />
+                <span />
+                <span />
+              </div>
+              <span className="eyebrow">Quiet by default</span>
+              <h1>Think in the center.<br />Keep context at the edges.</h1>
+              <p>
+                Select Sessions or Project from the left rail to prepare a
+                workspace. Live OMP conversation wiring arrives in the next pass.
+              </p>
+            </div>
+
+            <form className="composer" aria-label="Message composer">
+              <label htmlFor="message">Message OMP</label>
+              <textarea
+                id="message"
+                rows={2}
+                placeholder="Composer connection pending…"
+                disabled
+              />
+              <div className="composer__footer">
+                <span>Enter to send · ⌘Enter to steer</span>
+                <button type="submit" disabled>
+                  Send
+                </button>
+              </div>
+            </form>
+          </main>
+
+          {pinned.length > 0 && (
+            <aside className="pinned-panels" aria-label="Pinned panels">
+              {pinned.map((panel) => (
+                <section className="pinned-panel" key={panel}>
+                  <PanelHeader
+                    panel={panel}
+                    pinned
+                    onPin={() => togglePin(panel)}
+                    onClose={() => togglePin(panel)}
+                  />
+                  <div className="panel-body">
+                    <PanelBody panel={panel} />
+                  </div>
+                </section>
+              ))}
+            </aside>
+          )}
+
+          {drawer && (
+            <aside
+              className={`drawer drawer--${rightPanels.includes(drawer) ? "right" : "left"}`}
+              aria-label={`${panelMeta[drawer].label} drawer`}
+            >
+              <PanelHeader
+                panel={drawer}
+                pinned={pinned.includes(drawer)}
+                onPin={pinDrawer}
+                onClose={closeDrawer}
+              />
+              <div className="panel-body">
+                <PanelBody panel={drawer} />
+              </div>
+            </aside>
+          )}
+        </div>
+
+        <RightRail active={activeTargets} onSelect={selectRail} />
+      </div>
+    </div>
+  );
+};
