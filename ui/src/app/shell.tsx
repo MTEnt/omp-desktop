@@ -25,6 +25,66 @@ const EmptyPanel = ({ children }: { children: ReactNode }) => (
   </div>
 );
 
+const SessionTabs = () => {
+  const sessions = useSessionStore((state) => state.sessions);
+  const activeSessionId = useSessionStore((state) => state.activeSessionId);
+  const streaming = useSessionStore((state) => state.streaming);
+  const setActive = useSessionStore((state) => state.setActive);
+  const closeSession = useSessionStore((state) => state.closeSession);
+
+  return (
+    <nav className="session-tabs" aria-label="Session tabs">
+      {sessions.length > 0 ? (
+        <div className="session-tabs__scroll" role="tablist">
+          {sessions.map((session) => {
+            const isActive = session.id === activeSessionId;
+            const isStreaming = streaming[session.id] === true;
+
+            return (
+              <div
+                className={`session-tab${isActive ? " is-active" : ""}`}
+                key={session.id}
+              >
+                <button
+                  type="button"
+                  className="session-tab__select"
+                  role="tab"
+                  aria-selected={isActive}
+                  aria-controls="session-transcript"
+                  title={`${session.title} — ${session.cwd}`}
+                  onClick={() => setActive(session.id)}
+                >
+                  {isStreaming && (
+                    <span
+                      className="session-tab__streaming"
+                      title="Streaming"
+                      aria-label="Streaming"
+                    />
+                  )}
+                  <span className="session-tab__title">{session.title}</span>
+                </button>
+                <button
+                  type="button"
+                  className="session-tab__close"
+                  title={`Close ${session.title}`}
+                  aria-label={`Close ${session.title}`}
+                  onClick={() => void closeSession(session.id)}
+                >
+                  <svg viewBox="0 0 16 16" aria-hidden="true">
+                    <path d="m4 4 8 8M12 4 4 12" />
+                  </svg>
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        <span className="session-tabs__empty">No active session</span>
+      )}
+    </nav>
+  );
+};
+
 const PanelBody = ({ panel }: { panel: PanelId }) => {
   const sessions = useSessionStore((state) => state.sessions);
   const activeSessionId = useSessionStore((state) => state.activeSessionId);
@@ -42,6 +102,8 @@ const PanelBody = ({ panel }: { panel: PanelId }) => {
     ? (subagentsBySession[activeSessionId] ?? [])
     : [];
   const setActive = useSessionStore((state) => state.setActive);
+  const streaming = useSessionStore((state) => state.streaming);
+  const closeSession = useSessionStore((state) => state.closeSession);
   const activeSession = sessions.find(
     (session) => session.id === activeSessionId,
   );
@@ -50,21 +112,44 @@ const PanelBody = ({ panel }: { panel: PanelId }) => {
     case "sessions":
       return sessions.length > 0 ? (
         <div className="session-list">
-          {sessions.map((session) => (
-            <button
-              type="button"
-              className={`session-row${session.id === activeSessionId ? " is-current" : ""}`}
-              key={session.id}
-              onClick={() => setActive(session.id)}
-            >
-              <span className={`status-dot status-dot--${session.status}`} />
-              <span className="session-row__copy">
-                <strong>{session.title}</strong>
-                <small>{session.cwd}</small>
-              </span>
-              <span className="session-row__status">{session.status}</span>
-            </button>
-          ))}
+          {sessions.map((session) => {
+            const isActive = session.id === activeSessionId;
+            const isStreaming = streaming[session.id] === true;
+
+            return (
+              <div
+                className={`session-row${isActive ? " is-current" : ""}`}
+                key={session.id}
+              >
+                <button
+                  type="button"
+                  className="session-row__select"
+                  aria-current={isActive ? "page" : undefined}
+                  onClick={() => setActive(session.id)}
+                >
+                  <span className={`status-dot status-dot--${session.status}`} />
+                  <span className="session-row__copy">
+                    <strong>{session.title}</strong>
+                    <small>{session.cwd}</small>
+                  </span>
+                </button>
+                <span className="session-row__status">
+                  {isStreaming ? "streaming" : session.status}
+                </span>
+                <button
+                  type="button"
+                  className="session-row__close"
+                  title={`Close ${session.title}`}
+                  aria-label={`Close ${session.title}`}
+                  onClick={() => void closeSession(session.id)}
+                >
+                  <svg viewBox="0 0 16 16" aria-hidden="true">
+                    <path d="m4 4 8 8M12 4 4 12" />
+                  </svg>
+                </button>
+              </div>
+            );
+          })}
         </div>
       ) : (
         <EmptyPanel>Sessions will appear here after a project is opened.</EmptyPanel>
@@ -213,13 +298,8 @@ export const Shell = () => {
   const closeDrawer = useLayoutStore((state) => state.closeDrawer);
   const toggleDrawer = useLayoutStore((state) => state.toggleDrawer);
   const togglePin = useLayoutStore((state) => state.togglePin);
-  const sessions = useSessionStore((state) => state.sessions);
-  const activeSessionId = useSessionStore((state) => state.activeSessionId);
   const settings = useSessionStore((state) => state.settings);
   const openFolder = useSessionStore((state) => state.openFolder);
-  const activeSession = sessions.find(
-    (session) => session.id === activeSessionId,
-  );
   const activeTargets: RailTarget[] = [
     ...(drawer ? [drawer] : ["chat" as const]),
     ...pinned,
@@ -249,11 +329,7 @@ export const Shell = () => {
           </span>
           <span>OMP Desktop</span>
         </div>
-        <div className="session-heading">
-          <span className={`status-dot status-dot--${activeSession?.status ?? "idle"}`} />
-          <strong>{activeSession?.title ?? "No active session"}</strong>
-          <span>{activeSession?.cwd ?? "Open a project to begin"}</span>
-        </div>
+        <SessionTabs />
         <div className="runtime-strip" aria-label="Runtime details">
           <span>{settings?.defaultModel ?? "model —"}</span>
           <span>{settings?.defaultThinking ?? "thinking —"}</span>
@@ -275,7 +351,11 @@ export const Shell = () => {
         <LeftRail active={activeTargets} onSelect={selectRail} />
 
         <div className="stage">
-          <main className="chat" aria-label="Chat transcript">
+          <main
+            className="chat"
+            id="session-transcript"
+            aria-label="Chat transcript"
+          >
             <Transcript />
             <Composer />
           </main>

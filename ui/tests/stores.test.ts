@@ -2,7 +2,10 @@ import assert from "node:assert/strict";
 import { beforeEach, describe, it } from "node:test";
 
 import { useLayoutStore } from "../src/app/layout-store.ts";
-import { useSessionStore } from "../src/session/session-store.ts";
+import {
+  selectActiveTranscript,
+  useSessionStore,
+} from "../src/session/session-store.ts";
 import { api } from "../src/lib/tauri.ts";
 
 beforeEach(() => {
@@ -133,6 +136,144 @@ describe("session commands", () => {
     assert.deepEqual(state.todos["session-2"], []);
     assert.deepEqual(state.subagents["session-2"], []);
     assert.equal(state.streaming["session-2"], false);
+  });
+
+  it("selects only the active session transcript", () => {
+    useSessionStore.setState((state) => ({
+      sessions: [
+        ...state.sessions,
+        {
+          id: "session-2",
+          title: "second-project",
+          cwd: "/tmp/second-project",
+          profile: null,
+          status: "ready",
+        },
+      ],
+      transcripts: {
+        "session-1": [{ id: "user-1", kind: "user", text: "First tab" }],
+        "session-2": [{ id: "user-1", kind: "user", text: "Second tab" }],
+      },
+    }));
+
+    useSessionStore.getState().setActive("session-2");
+    assert.deepEqual(
+      selectActiveTranscript(useSessionStore.getState()),
+      [{ id: "user-1", kind: "user", text: "Second tab" }],
+    );
+
+    useSessionStore.getState().setActive("session-1");
+    assert.deepEqual(
+      selectActiveTranscript(useSessionStore.getState()),
+      [{ id: "user-1", kind: "user", text: "First tab" }],
+    );
+  });
+
+  it("closes an active session and removes all of its local state", async () => {
+    const originalCloseSession = api.closeSession;
+    const closed: string[] = [];
+    api.closeSession = async (sessionId) => {
+      closed.push(sessionId);
+    };
+    useSessionStore.setState((state) => ({
+      sessions: [
+        ...state.sessions,
+        {
+          id: "session-2",
+          title: "second-project",
+          cwd: "/tmp/second-project",
+          profile: null,
+          status: "ready",
+        },
+      ],
+      transcripts: { "session-1": [], "session-2": [] },
+      activity: { "session-1": [], "session-2": [] },
+      todos: { "session-1": [], "session-2": [] },
+      subagents: { "session-1": [], "session-2": [] },
+      states: { "session-1": {}, "session-2": {} },
+      streaming: { "session-1": true, "session-2": false },
+    }));
+
+    try {
+      await useSessionStore.getState().closeSession("session-1");
+    } finally {
+      api.closeSession = originalCloseSession;
+    }
+
+    const state = useSessionStore.getState();
+    assert.deepEqual(closed, ["session-1"]);
+    assert.deepEqual(state.sessions.map((session) => session.id), ["session-2"]);
+    assert.equal(state.activeSessionId, "session-2");
+    for (const sessionState of [
+      state.transcripts,
+      state.activity,
+      state.todos,
+      state.subagents,
+      state.states,
+      state.streaming,
+    ]) {
+      assert.equal("session-1" in sessionState, false);
+    }
+  });
+
+  it("ignores late events after a session tab closes", async () => {
+    const originalCloseSession = api.closeSession;
+    api.closeSession = async () => {};
+
+    try {
+      await useSessionStore.getState().closeSession("session-1");
+    } finally {
+      api.closeSession = originalCloseSession;
+    }
+
+    const store = useSessionStore.getState();
+    store.applyOmpEvent("session-1", {
+      type: "tool_execution_start",
+      toolCallId: "late-tool",
+      toolName: "read",
+    });
+    store.markExited("session-1");
+
+    const state = useSessionStore.getState();
+    assert.equal("session-1" in state.transcripts, false);
+    assert.equal("session-1" in state.activity, false);
+    assert.equal("session-1" in state.streaming, false);
+  });
+
+  it("removes an already-dead session locally without reporting an error", async () => {
+    const originalCloseSession = api.closeSession;
+    api.closeSession = async () => {
+      throw new Error("session not found: session-1");
+    };
+
+    try {
+      await useSessionStore.getState().closeSession("session-1");
+    } finally {
+      api.closeSession = originalCloseSession;
+    }
+
+    const state = useSessionStore.getState();
+    assert.deepEqual(state.sessions, []);
+    assert.equal(state.activeSessionId, null);
+    assert.equal(state.error, null);
+  });
+
+  it("removes local state but reports other close failures", async () => {
+    const originalCloseSession = api.closeSession;
+    api.closeSession = async () => {
+      throw new Error("transport unavailable");
+    };
+
+    try {
+      await useSessionStore.getState().closeSession("session-1");
+    } finally {
+      api.closeSession = originalCloseSession;
+    }
+
+    const state = useSessionStore.getState();
+    assert.deepEqual(state.sessions, []);
+    assert.equal(state.activeSessionId, null);
+    assert.equal(state.error, "Unable to close session: transport unavailable");
   });
 
   it("records prompt failures in the active transcript", async () => {
