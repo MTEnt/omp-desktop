@@ -1,0 +1,8 @@
+.superpowers/
+target/
+dist/
+node_modules/
+.DS_Store
+*.log
+.vite/
+src-tauri/target/
