@@ -12,6 +12,23 @@ Zen-default UI with expandable panels, multi-tab `omp --mode rpc` sessions, live
 - [Tauri 2 system dependencies](https://v2.tauri.app/start/prerequisites/)
 - `omp` on PATH (v17+), or set the binary path in Settings
 
+## Launch on macOS
+
+Double-click:
+
+```text
+Launch OMP Desktop.command
+```
+
+Or from a terminal in the project root:
+
+```bash
+npm run start
+# same as: npm run dev
+```
+
+The first launch installs dependencies if needed, then opens the OMP Desktop window.
+
 ## Development
 
 ```bash

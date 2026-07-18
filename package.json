@@ -5,7 +5,10 @@
     "dev": "tauri dev",
     "build": "tauri build",
     "ui:dev": "npm --prefix ui run dev",
-    "ui:build": "npm --prefix ui run build"
+    "ui:build": "npm --prefix ui run build",
+    "start": "tauri dev",
+    "launch:mac": "./Launch OMP Desktop.command",
+    "icons": "echo \"Icons live in src-tauri/icons (regenerate via repo script if needed)\""
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.10.1"

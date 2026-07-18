@@ -1,8 +1,8 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
-  "productName": "omp-desktop",
+  "productName": "OMP Desktop",
   "version": "0.1.0",
-  "identifier": "com.tauri.dev",
+  "identifier": "com.oh-my-pi.omp-desktop",
   "build": {
     "frontendDist": "../ui/dist",
     "devUrl": "http://localhost:5173",
@@ -13,10 +13,12 @@
     "windows": [
       {
         "title": "OMP Desktop",
-        "width": 800,
-        "height": 600,
+        "width": 1280,
+        "height": 840,
         "resizable": true,
-        "fullscreen": false
+        "fullscreen": false,
+        "minWidth": 960,
+        "minHeight": 640
       }
     ],
     "security": {
