@@ -3,6 +3,7 @@ import { beforeEach, describe, it } from "node:test";
 
 import { useLayoutStore } from "../src/app/layout-store.ts";
 import { useSessionStore } from "../src/session/session-store.ts";
+import { api } from "../src/lib/tauri.ts";
 
 beforeEach(() => {
   useLayoutStore.setState({ drawer: null, pinned: [] });
@@ -23,6 +24,7 @@ beforeEach(() => {
     todos: {},
     subagents: {},
     states: {},
+    error: null,
     streaming: {},
   });
 });
@@ -104,5 +106,54 @@ describe("session event reducer", () => {
     store.markExited("session-1");
     assert.equal(useSessionStore.getState().sessions[0]?.status, "exited");
     assert.equal(useSessionStore.getState().streaming["session-1"], false);
+  });
+});
+
+describe("session commands", () => {
+  it("creates a folder session and initializes its live state", async () => {
+    const originalCreateSession = api.createSession;
+    api.createSession = async (cwd) => ({
+      id: "session-2",
+      title: "second-project",
+      cwd,
+      profile: null,
+      status: "ready",
+    });
+
+    try {
+      await useSessionStore.getState().openFolder("/tmp/second-project");
+    } finally {
+      api.createSession = originalCreateSession;
+    }
+
+    const state = useSessionStore.getState();
+    assert.equal(state.activeSessionId, "session-2");
+    assert.deepEqual(state.transcripts["session-2"], []);
+    assert.deepEqual(state.activity["session-2"], []);
+    assert.deepEqual(state.todos["session-2"], []);
+    assert.deepEqual(state.subagents["session-2"], []);
+    assert.equal(state.streaming["session-2"], false);
+  });
+
+  it("records prompt failures in the active transcript", async () => {
+    const originalPrompt = api.prompt;
+    api.prompt = async () => {
+      throw new Error("rpc unavailable");
+    };
+
+    try {
+      await useSessionStore.getState().send("Hello");
+    } finally {
+      api.prompt = originalPrompt;
+    }
+
+    assert.deepEqual(useSessionStore.getState().transcripts["session-1"], [
+      { id: "user-1", kind: "user", text: "Hello" },
+      {
+        id: "system-1",
+        kind: "system",
+        text: "Unable to send message: rpc unavailable",
+      },
+    ]);
   });
 });
