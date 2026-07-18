@@ -1,11 +1,12 @@
-import { useSessionStore } from "../session/session-store.ts";
+import {
+  selectActiveActivity,
+  useSessionStore,
+} from "../session/session-store.ts";
 import { EmptyState } from "./empty-state.tsx";
 
 export const ActivityPanel = () => {
   const activeSessionId = useSessionStore((state) => state.activeSessionId);
-  const activity = useSessionStore((state) =>
-    state.activeSessionId ? (state.activity[state.activeSessionId] ?? []) : [],
-  );
+  const activity = useSessionStore(selectActiveActivity);
 
   if (!activeSessionId) {
     return <EmptyState>Select a session to inspect its activity.</EmptyState>;

@@ -41,6 +41,9 @@ export interface SessionStore {
 }
 
 const EMPTY_TRANSCRIPT: TranscriptItem[] = [];
+const EMPTY_ACTIVITY: ActivityItem[] = [];
+const EMPTY_TODOS: TodoPhase[] = [];
+const EMPTY_SUBAGENTS: SubagentInfo[] = [];
 
 export const selectActiveTranscript = (
   state: SessionStore,
@@ -48,6 +51,36 @@ export const selectActiveTranscript = (
   state.activeSessionId
     ? (state.transcripts[state.activeSessionId] ?? EMPTY_TRANSCRIPT)
     : EMPTY_TRANSCRIPT;
+
+export const selectActiveActivity = (state: SessionStore): ActivityItem[] =>
+  state.activeSessionId
+    ? (state.activity[state.activeSessionId] ?? EMPTY_ACTIVITY)
+    : EMPTY_ACTIVITY;
+
+export const selectActiveTodos = (state: SessionStore): TodoPhase[] =>
+  state.activeSessionId
+    ? (state.todos[state.activeSessionId] ?? EMPTY_TODOS)
+    : EMPTY_TODOS;
+
+export const selectActiveSubagents = (state: SessionStore): SubagentInfo[] =>
+  state.activeSessionId
+    ? (state.subagents[state.activeSessionId] ?? EMPTY_SUBAGENTS)
+    : EMPTY_SUBAGENTS;
+
+export const selectActiveSession = (
+  state: SessionStore,
+): SessionInfo | undefined =>
+  state.sessions.find((session) => session.id === state.activeSessionId);
+
+export const selectActiveRuntimeSnapshot = (
+  state: SessionStore,
+): unknown =>
+  state.activeSessionId ? state.states[state.activeSessionId] : undefined;
+
+export const selectIsActiveStreaming = (state: SessionStore): boolean =>
+  state.activeSessionId
+    ? state.streaming[state.activeSessionId] === true
+    : false;
 
 const isRecord = (value: unknown): value is OmpEvent =>
   typeof value === "object" && value !== null && !Array.isArray(value);

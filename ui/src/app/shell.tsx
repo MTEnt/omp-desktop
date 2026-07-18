@@ -4,6 +4,7 @@ import { useLayoutStore, type PanelId } from "./layout-store.ts";
 import { LeftRail, RightRail, type RailTarget } from "./rails.tsx";
 import {
   readSessionRuntimeStatus,
+  selectActiveRuntimeSnapshot,
   useSessionStore,
 } from "../session/session-store.ts";
 import { Composer } from "../session/composer.tsx";
@@ -16,6 +17,7 @@ import { SettingsPanel } from "../panels/settings-panel.tsx";
 import { SubagentsPanel } from "../panels/subagents-panel.tsx";
 import { TerminalPanel } from "../panels/terminal-panel.tsx";
 import { CommandPalette } from "./palette.tsx";
+import { PixelPieLogo } from "./pixel-pie-logo.tsx";
 
 const panelMeta: Record<PanelId, { label: string; eyebrow: string }> = {
   sessions: { label: "Sessions", eyebrow: "Workspace" },
@@ -160,9 +162,7 @@ export const Shell = () => {
   const toggleDrawer = useLayoutStore((state) => state.toggleDrawer);
   const togglePin = useLayoutStore((state) => state.togglePin);
   const activeSessionId = useSessionStore((state) => state.activeSessionId);
-  const runtimeSnapshot = useSessionStore((state) =>
-    state.activeSessionId ? state.states[state.activeSessionId] : undefined,
-  );
+  const runtimeSnapshot = useSessionStore(selectActiveRuntimeSnapshot);
   const refreshState = useSessionStore((state) => state.refreshState);
   const openFolder = useSessionStore((state) => state.openFolder);
   const [paletteOpen, setPaletteOpen] = useState(false);
@@ -216,10 +216,11 @@ export const Shell = () => {
     <div className="app-shell">
       <header className="top-bar">
         <div className="brand">
-          <span className="brand__sigil" aria-hidden="true">
-            O
-          </span>
-          <span>OMP Desktop</span>
+          <PixelPieLogo size={26} className="brand__pie" />
+          <div className="brand__copy">
+            <span className="brand__name">OMP Desktop</span>
+            <span className="brand__tag">Oh My Pi</span>
+          </div>
         </div>
         <SessionTabs />
         <div className="runtime-strip" aria-label="Active session status">

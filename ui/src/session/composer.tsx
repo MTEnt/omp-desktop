@@ -1,12 +1,10 @@
 import { useEffect, useState, type FormEvent, type KeyboardEvent } from "react";
 
-import { useSessionStore } from "./session-store.ts";
+import { selectIsActiveStreaming, useSessionStore } from "./session-store.ts";
 
 export const Composer = () => {
   const activeSessionId = useSessionStore((state) => state.activeSessionId);
-  const isStreaming = useSessionStore((state) =>
-    state.activeSessionId ? state.streaming[state.activeSessionId] === true : false,
-  );
+  const isStreaming = useSessionStore(selectIsActiveStreaming);
   const send = useSessionStore((state) => state.send);
   const abort = useSessionStore((state) => state.abort);
   const [draft, setDraft] = useState("");
