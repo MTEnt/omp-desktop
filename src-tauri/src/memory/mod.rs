@@ -476,15 +476,16 @@ impl MemoryStore {
         project_label: &str,
         role: &str,
     ) -> AppResult<(PersistentAgent, JobCard)> {
+        let _ = self.ensure_role_roster(project_key, project_label)?;
         let agent_id = format!("agent:{role}:{project_key}");
         let job_id = format!("job:{session_id}");
         let agent = self.upsert_agent(
             &agent_id,
             role,
-            &format!("{role} agent"),
+            &role_display_name(role),
             project_key,
             "running",
-            Some("Active session"),
+            Some("Active desktop session"),
             Some(session_id),
         )?;
         let job = self.upsert_job(
@@ -499,6 +500,103 @@ impl MemoryStore {
             Some(session_id),
         )?;
         Ok((agent, job))
+    }
+
+    /// Seed the standard OMP role agents for a project so the job board is never empty.
+    pub fn ensure_role_roster(
+        &self,
+        project_key: &str,
+        project_label: &str,
+    ) -> AppResult<Vec<PersistentAgent>> {
+        let roles = [
+            ("default", "Primary coding agent"),
+            ("smol", "Fast / cheap helper"),
+            ("slow", "Deep reasoning agent"),
+            ("plan", "Planning agent"),
+            ("task", "Task executor"),
+            ("advisor", "Advisor / review agent"),
+            ("tiny", "Lightweight background agent"),
+            ("designer", "Design agent"),
+            ("commit", "Commit message agent"),
+            ("vision", "Vision agent"),
+        ];
+        let mut out = Vec::new();
+        for (role, job) in roles {
+            let agent_id = format!("agent:{role}:{project_key}");
+            let agent = self.upsert_agent(
+                &agent_id,
+                role,
+                &role_display_name(role),
+                project_key,
+                "idle",
+                Some(job),
+                None,
+            )?;
+            // Stable roster job card per role (not per session).
+            let job_id = format!("role-job:{role}:{project_key}");
+            let _ = self.upsert_job(
+                &job_id,
+                project_key,
+                project_label,
+                &format!("{role} · standing role"),
+                job,
+                "queued",
+                Some(&agent_id),
+                Some(role),
+                None,
+            )?;
+            out.push(agent);
+        }
+        Ok(out)
+    }
+
+    pub fn mark_session_turn(
+        &self,
+        session_id: &str,
+        project_key: &str,
+        project_label: &str,
+        role: &str,
+        summary: &str,
+    ) -> AppResult<()> {
+        let agent_id = format!("agent:{role}:{project_key}");
+        let _ = self.upsert_agent(
+            &agent_id,
+            role,
+            &role_display_name(role),
+            project_key,
+            "idle",
+            Some(summary),
+            Some(session_id),
+        )?;
+        let job_id = format!("job:{session_id}");
+        let _ = self.upsert_job(
+            &job_id,
+            project_key,
+            project_label,
+            &format!("{role} session"),
+            summary,
+            "running",
+            Some(&agent_id),
+            Some(role),
+            Some(session_id),
+        )?;
+        Ok(())
+    }
+}
+
+fn role_display_name(role: &str) -> String {
+    match role {
+        "default" => "Default agent".into(),
+        "smol" => "Smol agent".into(),
+        "slow" => "Slow agent".into(),
+        "plan" => "Plan agent".into(),
+        "task" => "Task agent".into(),
+        "advisor" => "Advisor agent".into(),
+        "tiny" => "Tiny agent".into(),
+        "designer" => "Designer agent".into(),
+        "commit" => "Commit agent".into(),
+        "vision" => "Vision agent".into(),
+        other => format!("{other} agent"),
     }
 }
 
@@ -570,14 +668,15 @@ memory:
 mnemopi:
   scoping: per-project-tagged
   autoRecall: true
-  autoRetain: true
-  retainEveryNTurns: 8
+  # Retain is expensive; desktop triggers consolidation off the interactive path.
+  autoRetain: false
+  retainEveryNTurns: 99
   recallLimit: 6
   recallContextTurns: 2
   injectionTokenLimit: 2500
   polyphonicRecall: false
   enhancedRecall: false
-  llmMode: smol
+  llmMode: none
 "#;
     fs::write(path, body)?;
     Ok(())
@@ -631,7 +730,9 @@ mod tests {
             .unwrap();
         assert_eq!(agent.role, "default");
         assert_eq!(job.session_id.as_deref(), Some("sess-9"));
-        assert_eq!(store.list_jobs(Some("/tmp/proj")).unwrap().len(), 1);
+        // roster seeds standing role jobs + one session job
+        assert!(store.list_jobs(Some("/tmp/proj")).unwrap().len() >= 11);
+        assert!(store.list_agents(Some("/tmp/proj")).unwrap().len() >= 10);
         let _ = fs::remove_file(path);
     }
 }

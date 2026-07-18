@@ -133,10 +133,13 @@ pub async fn create_session(
     {
         let memory = state.memory.lock().await;
         let project = PathBuf::from(&info.cwd);
+        let key = memory::project_key(&project);
+        let label = memory::project_label(&project);
+        let _ = memory.ensure_role_roster(&key, &label);
         let _ = memory.ensure_default_agent_for_session(
             &info.id,
-            &memory::project_key(&project),
-            &memory::project_label(&project),
+            &key,
+            &label,
             "default",
         );
     }
@@ -407,6 +410,35 @@ pub async fn upsert_job(
         assignee_role.as_deref(),
         session_id.as_deref(),
     )
+}
+
+
+#[tauri::command(rename_all = "camelCase")]
+pub async fn post_turn_housekeeping(
+    state: State<'_, AppState>,
+    session_id: String,
+    project_key: String,
+    project_label: String,
+    role: Option<String>,
+    summary: Option<String>,
+) -> Result<(), AppError> {
+    let role = role.unwrap_or_else(|| "default".into());
+    let summary = summary.unwrap_or_else(|| "Turn complete".into());
+    let memory = state.memory.lock().await;
+    let _ = memory.ensure_role_roster(&project_key, &project_label);
+    memory.mark_session_turn(&session_id, &project_key, &project_label, &role, &summary)?;
+    // Capture a lightweight interaction note for this role (non-blocking intent: caller fires after turn).
+    if summary.trim().len() > 0 && summary != "Turn complete" {
+        let _ = memory.add_role_note(
+            &role,
+            &project_key,
+            "interaction",
+            "Recent turn",
+            &summary,
+            Some(&session_id),
+        );
+    }
+    Ok(())
 }
 
 #[cfg(test)]

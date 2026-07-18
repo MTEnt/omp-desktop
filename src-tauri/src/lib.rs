@@ -45,6 +45,7 @@ pub fn run() {
             commands::get_state,
             commands::rpc_command,
             commands::upsert_job,
+            commands::post_turn_housekeeping,
             commands::list_jobs,
             commands::list_agents,
             commands::save_role_scratchpad,

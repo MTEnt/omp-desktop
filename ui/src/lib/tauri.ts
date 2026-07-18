@@ -94,6 +94,21 @@ export const api = {
     invoke<PersistentAgent[]>("list_agents", { projectKey: projectKey ?? null }),
   listJobs: (projectKey?: string | null) =>
     invoke<JobCard[]>("list_jobs", { projectKey: projectKey ?? null }),
+  postTurnHousekeeping: (input: {
+    sessionId: string;
+    projectKey: string;
+    projectLabel: string;
+    role?: string;
+    summary?: string;
+  }) =>
+    invoke<void>("post_turn_housekeeping", {
+      sessionId: input.sessionId,
+      projectKey: input.projectKey,
+      projectLabel: input.projectLabel,
+      role: input.role ?? null,
+      summary: input.summary ?? null,
+    }),
+
   upsertJob: (job: {
     id: string;
     projectKey: string;

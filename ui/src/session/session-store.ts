@@ -624,7 +624,42 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
           [sessionId]: type === "agent_start",
         },
       }));
-      if (type === "agent_end") void get().refreshState(sessionId);
+      if (type === "agent_end") {
+        // Never block the UI/stream path: refresh + memory/job board work runs after the turn.
+        void get().refreshState(sessionId);
+        const session = get().sessions.find((item) => item.id === sessionId);
+        if (session) {
+          const projectKey = projectKeyFromCwd(session.cwd);
+          const projectLabel =
+            session.cwd.split(/[\\/]/).filter(Boolean).at(-1) || session.title;
+          const transcript = get().transcripts[sessionId] ?? [];
+          const lastUser = [...transcript]
+            .reverse()
+            .find((item) => item.kind === "user");
+          const lastAssistant = [...transcript]
+            .reverse()
+            .find((item) => item.kind === "assistant");
+          const summary = [
+            lastUser ? `User: ${lastUser.text.slice(0, 240)}` : "",
+            lastAssistant && lastAssistant.kind === "assistant"
+              ? `Assistant: ${lastAssistant.text.slice(0, 240)}`
+              : "",
+          ]
+            .filter(Boolean)
+            .join(" | ");
+          void api
+            .postTurnHousekeeping({
+              sessionId,
+              projectKey,
+              projectLabel,
+              role: "default",
+              summary: summary || "Turn complete",
+            })
+            .catch(() => undefined);
+          // Warm role-memory cache while the user reads the reply.
+          void get().ensureRoleMemoryPreamble("default", session.cwd, sessionId);
+        }
+      }
       return;
     }
 
