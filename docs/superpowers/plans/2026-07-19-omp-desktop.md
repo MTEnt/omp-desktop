@@ -12,7 +12,7 @@
 
 **Git author for all commits in this repo:**
 ```bash
-git -c user.name="MTEnt" -c user.email="MTEnt@users.noreply.github.com" commit ...
+git -c user.name="MTEnt" -c user.email="stan.pav1388@gmail.com" commit ...
 ```
 
 ---
@@ -79,14 +79,13 @@ omp-desktop/
 ### Task 1: Scaffold Tauri 2 + React/Vite app
 
 **Files:**
-- Create: full Tauri/Vite tree under `~/Desktop/omp-desktop`
+- Create: full Tauri/Vite tree under the project root
 - Modify: `.gitignore` (keep existing entries; add Tauri/node defaults if missing)
 - Create: `README.md` (minimal dev instructions)
 
 - [ ] **Step 1: Scaffold in place without wiping git/docs**
 
 ```bash
-cd /Users/MTEnt/Desktop/omp-desktop
 
 # Frontend in ui/
 npm create vite@latest ui -- --template react-ts
@@ -158,16 +157,15 @@ Root `package.json`:
 - [ ] **Step 4: Smoke `tauri dev` window**
 
 ```bash
-cd /Users/MTEnt/Desktop/omp-desktop && npm run dev
+ npm run dev
 ```
 Expected: native window loads Vite React template without Rust compile errors.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-cd /Users/MTEnt/Desktop/omp-desktop
 git add -A
-git -c user.name="MTEnt" -c user.email="MTEnt@users.noreply.github.com" commit -m "$(cat <<'EOF'
+git -c user.name="MTEnt" -c user.email="stan.pav1388@gmail.com" commit -m "$(cat <<'EOF'
 chore: scaffold Tauri 2 + React/Vite app shell
 
 Initialize macOS desktop host and ui/ frontend without agent logic yet.
@@ -373,7 +371,7 @@ mod tests {
 - [ ] **Step 4: Run tests**
 
 ```bash
-cd /Users/MTEnt/Desktop/omp-desktop/src-tauri && cargo test settings:: -- --nocapture
+cd ./src-tauri && cargo test settings:: -- --nocapture
 ```
 Expected: PASS (`default_is_yolo`, `round_trip_settings`)
 
@@ -397,7 +395,7 @@ pub fn run() {
 
 ```bash
 git add src-tauri
-git -c user.name="MTEnt" -c user.email="MTEnt@users.noreply.github.com" commit -m "$(cat <<'EOF'
+git -c user.name="MTEnt" -c user.email="stan.pav1388@gmail.com" commit -m "$(cat <<'EOF'
 feat: add app settings store with yolo default
 
 Persist approval mode and omp binary path under the user config dir.
@@ -554,7 +552,7 @@ Expected: ready + request correlation + event forward PASS.
 
 ```bash
 git add src-tauri/src/rpc src-tauri/src/lib.rs
-git -c user.name="MTEnt" -c user.email="MTEnt@users.noreply.github.com" commit -m "$(cat <<'EOF'
+git -c user.name="MTEnt" -c user.email="stan.pav1388@gmail.com" commit -m "$(cat <<'EOF'
 feat: add OMP JSONL RPC client
 
 Correlate request ids, wait for ready, and fan out session events.
@@ -1018,7 +1016,7 @@ Use `@tauri-apps/plugin-dialog` `open({ directory: true })` → `api.createSessi
 # ensure omp works
 omp --mode rpc -p "ping"  # or short rpc sanity
 npm run dev
-# UI: open ~/Desktop/omp-desktop, send "Reply with the word pong only."
+# UI: open this project folder, send "Reply with the word pong only."
 ```
 Expected: assistant text streams into transcript; no approval UI.
 

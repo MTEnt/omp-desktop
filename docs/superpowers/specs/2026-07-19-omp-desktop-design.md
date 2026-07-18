@@ -2,7 +2,7 @@
 
 **Date:** 2026-07-19  
 **Repo:** https://github.com/MTEnt/omp-desktop  
-**Local path:** `~/Desktop/omp-desktop`  
+**Local path:** project root  
 **Status:** Design complete — awaiting user review before implementation plan
 
 ## 1. Purpose
