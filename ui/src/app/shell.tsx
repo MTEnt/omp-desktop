@@ -22,6 +22,7 @@ import { TerminalPanel } from "../panels/terminal-panel.tsx";
 import { CommandPalette } from "./palette.tsx";
 import { PixelPieLogo } from "./pixel-pie-logo.tsx";
 import { RoleModelStrip } from "./role-model-picker.tsx";
+import { TaskProgressStrip } from "./task-progress-strip.tsx";
 
 const panelMeta: Record<PanelId, { label: string; eyebrow: string }> = {
   sessions: { label: "Sessions", eyebrow: "Workspace" },
@@ -329,6 +330,7 @@ export const Shell = () => {
             id="session-transcript"
             aria-label="Chat transcript"
           >
+            <TaskProgressStrip />
             <Transcript />
             <Composer />
           </main>

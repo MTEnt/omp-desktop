@@ -72,6 +72,11 @@ export const selectActiveTodos = (state: SessionStore): TodoPhase[] =>
     ? (state.todos[state.activeSessionId] ?? EMPTY_TODOS)
     : EMPTY_TODOS;
 
+export const selectActiveStreaming = (state: SessionStore): boolean =>
+  state.activeSessionId
+    ? state.streaming[state.activeSessionId] === true
+    : false;
+
 export const selectActiveSubagents = (state: SessionStore): SubagentInfo[] =>
   state.activeSessionId
     ? (state.subagents[state.activeSessionId] ?? EMPTY_SUBAGENTS)
