@@ -1,11 +1,12 @@
-import { useSessionStore } from "../session/session-store.ts";
+import {
+  selectActiveTodos,
+  useSessionStore,
+} from "../session/session-store.ts";
 import { EmptyState } from "./empty-state.tsx";
 
 export const PlanPanel = () => {
   const activeSessionId = useSessionStore((state) => state.activeSessionId);
-  const todos = useSessionStore((state) =>
-    state.activeSessionId ? (state.todos[state.activeSessionId] ?? []) : [],
-  );
+  const todos = useSessionStore(selectActiveTodos);
 
   if (!activeSessionId) {
     return <EmptyState>Select a session to inspect its execution plan.</EmptyState>;

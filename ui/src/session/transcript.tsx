@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { useLayoutStore } from "../app/layout-store.ts";
 import {
+  selectActiveSession,
   selectActiveTranscript,
   useSessionStore,
 } from "./session-store.ts";
@@ -67,10 +68,7 @@ const TranscriptEntry = ({ item }: { item: TranscriptItem }) => {
 
 export const Transcript = () => {
   const activeSessionId = useSessionStore((state) => state.activeSessionId);
-  const activeSession = useSessionStore((state) =>
-    state.sessions.find((session) => session.id === state.activeSessionId) ??
-    null,
-  );
+  const activeSession = useSessionStore(selectActiveSession) ?? null;
   const items = useSessionStore(selectActiveTranscript);
   const error = useSessionStore((state) => state.error);
   const openFolder = useSessionStore((state) => state.openFolder);
@@ -165,15 +163,16 @@ export const Transcript = () => {
       {!activeSessionId ? (
         <div className="transcript-empty">
           <EmptyGlyph />
-          <span className="eyebrow">Local context first</span>
+          <span className="eyebrow">Oh My Pi · desktop cockpit</span>
           <h1>
             Open a folder.
             <br />
-            Start the conversation.
+            Talk to OMP.
           </h1>
           <p>
-            OMP runs in the project you choose and streams its work back into
-            this transcript. Requires <code>omp</code> on PATH (v17+).
+            OMP Desktop hosts real <code>omp --mode rpc</code> sessions with a
+            Zen cockpit for plans, tools, subagents, and a local terminal.
+            Requires <code>omp</code> on PATH (v17+).
           </p>
           <button
             className="open-folder-cta"
@@ -202,11 +201,11 @@ export const Transcript = () => {
       ) : items.length === 0 ? (
         <div className="transcript-empty transcript-empty--ready">
           <EmptyGlyph />
-          <span className="eyebrow">Session ready</span>
-          <h1>What are we building?</h1>
+          <span className="eyebrow">OMP is ready</span>
+          <h1>What should OMP build?</h1>
           <p>
-            Message OMP below. Tool calls and streamed responses will stay
-            together here.
+            Message OMP below. Thinking, tool calls, and streamed replies stay
+            together in this transcript.
           </p>
         </div>
       ) : (

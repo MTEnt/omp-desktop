@@ -5,7 +5,7 @@ import { Terminal } from "xterm";
 import "xterm/css/xterm.css";
 
 import { api } from "../lib/tauri.ts";
-import { useSessionStore } from "../session/session-store.ts";
+import { selectActiveSession, useSessionStore } from "../session/session-store.ts";
 import type { SessionInfo } from "../session/types.ts";
 import { EmptyState } from "./empty-state.tsx";
 
@@ -131,9 +131,7 @@ const SessionTerminal = ({ session }: { session: SessionInfo }) => {
 };
 
 export const TerminalPanel = () => {
-  const session = useSessionStore((state) =>
-    state.sessions.find((candidate) => candidate.id === state.activeSessionId),
-  );
+  const session = useSessionStore(selectActiveSession);
 
   if (!session) return <EmptyState>Open a session to start a terminal.</EmptyState>;
   return <SessionTerminal key={session.id} session={session} />;

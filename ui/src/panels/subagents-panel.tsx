@@ -1,13 +1,14 @@
 import { useEffect, useState } from "react";
 
-import { useSessionStore } from "../session/session-store.ts";
+import {
+  selectActiveSubagents,
+  useSessionStore,
+} from "../session/session-store.ts";
 import { EmptyState } from "./empty-state.tsx";
 
 export const SubagentsPanel = () => {
   const activeSessionId = useSessionStore((state) => state.activeSessionId);
-  const subagents = useSessionStore((state) =>
-    state.activeSessionId ? (state.subagents[state.activeSessionId] ?? []) : [],
-  );
+  const subagents = useSessionStore(selectActiveSubagents);
   const loadSubagents = useSessionStore((state) => state.loadSubagents);
   const [isLoading, setIsLoading] = useState(false);
 
