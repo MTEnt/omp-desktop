@@ -463,16 +463,36 @@ button:disabled {
   text-transform: uppercase;
 }
 
-.session-sidebar__new {
+.session-sidebar__actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.session-sidebar__new,
+.session-sidebar__collapse {
   width: 24px;
   height: 24px;
   border: 1px solid var(--line);
   border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+}
+
+.session-sidebar__new {
   color: var(--accent);
   background: var(--accent-dim);
-  cursor: pointer;
-  font-size: 16px;
-  line-height: 1;
+}
+
+.session-sidebar__collapse {
+  color: var(--ink-muted);
+  background: transparent;
+}
+
+.session-sidebar__collapse:hover {
+  color: var(--ink);
+  border-color: rgba(0, 180, 255, 0.35);
 }
 
 .session-sidebar__list {
@@ -578,8 +598,12 @@ button:disabled {
 
 .shell-workspace {
   display: grid;
-  grid-template-columns: var(--rail-size) 220px minmax(0, 1fr) var(--rail-size);
+  grid-template-columns: var(--rail-size) minmax(0, 1fr) var(--rail-size);
   min-height: 0;
+}
+
+.shell-workspace.has-sessions {
+  grid-template-columns: var(--rail-size) 220px minmax(0, 1fr) var(--rail-size);
 }
 
 .icon-rail {

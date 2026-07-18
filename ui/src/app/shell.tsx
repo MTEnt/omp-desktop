@@ -52,14 +52,25 @@ const SessionSidebar = () => {
     <aside className="session-sidebar" aria-label="Sessions">
       <div className="session-sidebar__header">
         <span>Sessions</span>
-        <button
-          type="button"
-          className="session-sidebar__new"
-          onClick={() => void openFolder()}
-          title="Open folder"
-        >
-          +
-        </button>
+        <div className="session-sidebar__actions">
+          <button
+            type="button"
+            className="session-sidebar__new"
+            onClick={() => void openFolder()}
+            title="Open folder"
+          >
+            +
+          </button>
+          <button
+            type="button"
+            className="session-sidebar__collapse"
+            onClick={() => useLayoutStore.getState().setSessionsSidebarOpen(false)}
+            title="Hide sessions"
+            aria-label="Hide sessions sidebar"
+          >
+            «
+          </button>
+        </div>
       </div>
       {sessions.length > 0 ? (
         <div className="session-sidebar__list" role="tablist">
@@ -226,9 +237,18 @@ export const Shell = () => {
     return () => window.clearInterval(refreshTimer);
   }, [activeSessionId, refreshState]);
 
+  const sessionsSidebarOpen = useLayoutStore((state) => state.sessionsSidebarOpen);
+  const toggleSessionsSidebar = useLayoutStore((state) => state.toggleSessionsSidebar);
+
   const selectRail = (target: RailTarget) => {
     if (target === "chat") {
       closeDrawer();
+      return;
+    }
+    if (target === "sessions") {
+      // Sessions live in a collapsible sidebar, not a chat-covering drawer.
+      closeDrawer();
+      toggleSessionsSidebar();
       return;
     }
     toggleDrawer(target);
@@ -291,9 +311,17 @@ export const Shell = () => {
         </div>
       </header>
 
-      <div className="shell-workspace">
-        <LeftRail active={activeTargets} onSelect={selectRail} />
-        <SessionSidebar />
+      <div
+        className={`shell-workspace${sessionsSidebarOpen ? " has-sessions" : ""}`}
+      >
+        <LeftRail
+          active={[
+            ...activeTargets,
+            ...(sessionsSidebarOpen ? (["sessions"] as const) : []),
+          ]}
+          onSelect={selectRail}
+        />
+        {sessionsSidebarOpen ? <SessionSidebar /> : null}
 
         <div className="stage">
           <main

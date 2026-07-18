@@ -118,6 +118,8 @@ export const CommandPalette = ({ open, onOpenChange }: CommandPaletteProps) => {
   const drawer = useLayoutStore((state) => state.drawer);
   const toggleDrawer = useLayoutStore((state) => state.toggleDrawer);
   const openDrawer = useLayoutStore((state) => state.openDrawer);
+  const toggleSessionsSidebar = useLayoutStore((state) => state.toggleSessionsSidebar);
+  const sessionsSidebarOpen = useLayoutStore((state) => state.sessionsSidebarOpen);
   const [mode, setMode] = useState<"commands" | "models">("commands");
   const [query, setQuery] = useState("");
   const [selectedIndex, setSelectedIndex] = useState(0);
@@ -173,9 +175,19 @@ export const CommandPalette = ({ open, onOpenChange }: CommandPaletteProps) => {
         id: `panel-${panel.id}`,
         group: "Panels",
         label: `Toggle ${panel.label}`,
-        detail: drawer === panel.id ? "Close drawer" : "Open drawer",
+        detail:
+          panel.id === "sessions"
+            ? sessionsSidebarOpen
+              ? "Hide sidebar"
+              : "Show sidebar"
+            : drawer === panel.id
+              ? "Close drawer"
+              : "Open drawer",
         keywords: `view show hide ${panel.label}`,
-        run: () => toggleDrawer(panel.id),
+        run: () =>
+          panel.id === "sessions"
+            ? toggleSessionsSidebar()
+            : toggleDrawer(panel.id),
       })),
       {
         id: "open-settings",
@@ -267,6 +279,8 @@ export const CommandPalette = ({ open, onOpenChange }: CommandPaletteProps) => {
     activeSessionId,
     drawer,
     openDrawer,
+    toggleSessionsSidebar,
+    sessionsSidebarOpen,
     openFolder,
     refreshState,
     runtimeStatus.model,

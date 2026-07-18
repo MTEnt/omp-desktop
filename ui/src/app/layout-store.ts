@@ -15,15 +15,19 @@ export type PanelId =
 interface LayoutStore {
   drawer: PanelId | null;
   pinned: PanelId[];
+  sessionsSidebarOpen: boolean;
   openDrawer: (panel: PanelId) => void;
   closeDrawer: () => void;
   togglePin: (panel: PanelId) => void;
   toggleDrawer: (panel: PanelId) => void;
+  setSessionsSidebarOpen: (open: boolean) => void;
+  toggleSessionsSidebar: () => void;
 }
 
 export const useLayoutStore = create<LayoutStore>()((set) => ({
   drawer: null,
   pinned: [],
+  sessionsSidebarOpen: false,
   openDrawer: (panel) => set({ drawer: panel }),
   closeDrawer: () => set({ drawer: null }),
   togglePin: (panel) =>
@@ -34,4 +38,7 @@ export const useLayoutStore = create<LayoutStore>()((set) => ({
     })),
   toggleDrawer: (panel) =>
     set((state) => ({ drawer: state.drawer === panel ? null : panel })),
+  setSessionsSidebarOpen: (open) => set({ sessionsSidebarOpen: open }),
+  toggleSessionsSidebar: () =>
+    set((state) => ({ sessionsSidebarOpen: !state.sessionsSidebarOpen })),
 }));
