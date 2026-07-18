@@ -21,7 +21,7 @@ export interface AppSettings {
 
 export type TranscriptItem =
   | { id: string; kind: "user"; text: string }
-  | { id: string; kind: "assistant"; text: string; thinking?: string }
+  | { id: string; kind: "assistant"; text: string; thinking?: string; responseId?: string }
   | {
       id: string;
       kind: "tool";

@@ -2,6 +2,7 @@ use crate::error::AppError;
 use crate::omp_config::{self, AvailableModel, ModelRolesSnapshot};
 use crate::pty::{PtyManager, PtyOutput};
 use crate::session::{SessionInfo, SessionManager};
+use crate::session_history;
 use crate::settings::{self, AppSettings};
 use serde::Serialize;
 use serde_json::Value;
@@ -217,6 +218,55 @@ pub async fn abort(state: State<'_, AppState>, session_id: String) -> Result<Val
 #[tauri::command(rename_all = "camelCase")]
 pub async fn get_state(state: State<'_, AppState>, session_id: String) -> Result<Value, AppError> {
     state.sessions.lock().await.get_state(&session_id).await
+}
+
+
+#[tauri::command(rename_all = "camelCase")]
+pub async fn rewrite_assistant_message(
+    state: State<'_, AppState>,
+    session_id: String,
+    text: String,
+    response_id: Option<String>,
+) -> Result<session_history::RewriteResult, AppError> {
+    let mut sessions = state.sessions.lock().await;
+    let snapshot = sessions.get_state(&session_id).await?;
+    if snapshot.get("success").and_then(|v| v.as_bool()) == Some(false) {
+        return Err(AppError::Msg(
+            snapshot
+                .get("error")
+                .and_then(|v| v.as_str())
+                .unwrap_or("get_state failed")
+                .to_string(),
+        ));
+    }
+    let data = snapshot.get("data").cloned().unwrap_or(snapshot);
+    let session_file = data
+        .get("sessionFile")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| AppError::Msg("session file unavailable from omp state".into()))?;
+    let result = session_history::rewrite_assistant_text(
+        PathBuf::from(session_file).as_path(),
+        response_id.as_deref(),
+        &text,
+    )?;
+    // Reload so in-memory OMP history matches the rewritten file.
+    let reload = sessions
+        .rpc_command(
+            &session_id,
+            "switch_session",
+            serde_json::json!({ "sessionPath": result.session_file.clone() }),
+        )
+        .await?;
+    if reload.get("success").and_then(|v| v.as_bool()) == Some(false) {
+        return Err(AppError::Msg(format!(
+            "rewrote session file but failed to reload omp: {}",
+            reload
+                .get("error")
+                .and_then(|v| v.as_str())
+                .unwrap_or("switch_session failed")
+        )));
+    }
+    Ok(result)
 }
 
 #[tauri::command(rename_all = "camelCase")]
