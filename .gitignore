@@ -6,3 +6,4 @@ node_modules/
 *.log
 .vite/
 src-tauri/target/
+.worktrees/
