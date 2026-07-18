@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useLayoutStore, type PanelId } from "./layout-store.ts";
 import { LeftRail, RightRail, type RailTarget } from "./rails.tsx";
 import {
+  PRIMARY_MODEL_ROLES,
   readSessionRuntimeStatus,
   selectActiveRuntimeSnapshot,
   useSessionStore,
@@ -163,6 +164,7 @@ export const Shell = () => {
   const togglePin = useLayoutStore((state) => state.togglePin);
   const activeSessionId = useSessionStore((state) => state.activeSessionId);
   const runtimeSnapshot = useSessionStore(selectActiveRuntimeSnapshot);
+  const modelRoles = useSessionStore((state) => state.modelRoles);
   const refreshState = useSessionStore((state) => state.refreshState);
   const openFolder = useSessionStore((state) => state.openFolder);
   const [paletteOpen, setPaletteOpen] = useState(false);
@@ -170,6 +172,12 @@ export const Shell = () => {
     () => readSessionRuntimeStatus(runtimeSnapshot),
     [runtimeSnapshot],
   );
+  const primaryRoles = useMemo(() => {
+    const preferred = new Set<string>(PRIMARY_MODEL_ROLES);
+    const ranked = modelRoles.filter((role) => preferred.has(role.role));
+    const extras = modelRoles.filter((role) => !preferred.has(role.role));
+    return [...ranked, ...extras].slice(0, 6);
+  }, [modelRoles]);
   const activeTargets: RailTarget[] = [
     ...(drawer ? [drawer] : ["chat" as const]),
     ...pinned,
@@ -224,13 +232,45 @@ export const Shell = () => {
         </div>
         <SessionTabs />
         <div className="runtime-strip" aria-label="Active session status">
-          <span title={runtimeStatus.model ?? "Model unavailable"}>
-            model {runtimeStatus.model ?? "—"}
-          </span>
-          <span title={runtimeStatus.thinkingLevel ?? "Thinking level unavailable"}>
-            thinking {runtimeStatus.thinkingLevel ?? "—"}
+          <div className="runtime-strip__roles" aria-label="OMP model roles">
+            {primaryRoles.length > 0 ? (
+              primaryRoles.map((role) => {
+                const isActive =
+                  role.role === "default" ||
+                  (runtimeStatus.modelId !== null &&
+                    (role.modelId === runtimeStatus.modelId ||
+                      role.selector.includes(runtimeStatus.modelId)));
+                return (
+                  <span
+                    className={`role-chip${isActive ? " is-active" : ""}`}
+                    key={role.role}
+                    title={`${role.role}: ${role.selector}`}
+                  >
+                    <span className="role-chip__role">{role.role}</span>
+                    <span className="role-chip__model">{role.shortLabel}</span>
+                  </span>
+                );
+              })
+            ) : (
+              <span
+                className="role-chip is-active"
+                title={runtimeStatus.model ?? "Active model unavailable"}
+              >
+                <span className="role-chip__role">active</span>
+                <span className="role-chip__model">
+                  {runtimeStatus.model ?? "—"}
+                </span>
+              </span>
+            )}
+          </div>
+          <span
+            className="runtime-meta"
+            title={runtimeStatus.thinkingLevel ?? "Thinking level unavailable"}
+          >
+            think {runtimeStatus.thinkingLevel ?? "—"}
           </span>
           <span
+            className="runtime-meta"
             title={
               runtimeStatus.contextPercent === null
                 ? "Context usage unavailable"

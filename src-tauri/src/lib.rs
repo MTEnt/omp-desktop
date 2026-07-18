@@ -1,4 +1,5 @@
 mod commands;
+mod omp_config;
 mod error;
 mod pty;
 mod rpc;
@@ -26,6 +27,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             commands::get_settings,
+            commands::get_model_roles,
             commands::save_settings,
             commands::list_sessions,
             commands::create_session,

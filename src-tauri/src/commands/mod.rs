@@ -1,4 +1,5 @@
 use crate::error::AppError;
+use crate::omp_config::{self, ModelRolesSnapshot};
 use crate::pty::{PtyManager, PtyOutput};
 use crate::session::{SessionInfo, SessionManager};
 use crate::settings::{self, AppSettings};
@@ -41,6 +42,12 @@ fn omp_binary_or_fallback(settings: &AppSettings) -> PathBuf {
 struct SessionEventEnvelope {
     session_id: String,
     event: Value,
+}
+
+
+#[tauri::command(rename_all = "camelCase")]
+pub async fn get_model_roles() -> Result<ModelRolesSnapshot, AppError> {
+    omp_config::load_model_roles()
 }
 
 #[tauri::command(rename_all = "camelCase")]

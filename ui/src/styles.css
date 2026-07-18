@@ -331,43 +331,97 @@ button:disabled {
   display: flex;
   align-items: center;
   justify-content: flex-end;
+  gap: 8px;
   height: 100%;
+  min-width: 0;
   padding: 0 9px;
   color: var(--ink-faint);
   font-family: "SFMono-Regular", Menlo, monospace;
   font-size: 9px;
   letter-spacing: 0.035em;
+}
+
+.runtime-strip__roles {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  min-width: 0;
+  max-width: min(62vw, 760px);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.runtime-strip__roles::-webkit-scrollbar {
+  display: none;
+}
+
+.role-chip {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  max-width: 220px;
+  padding: 4px 8px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: rgba(21, 24, 32, 0.9);
+  color: var(--ink-muted);
+  white-space: nowrap;
+}
+
+.role-chip.is-active {
+  border-color: rgba(0, 180, 255, 0.45);
+  background: rgba(0, 180, 255, 0.12);
+  color: var(--ink);
+  box-shadow: 0 0 0 1px rgba(0, 180, 255, 0.08);
+}
+
+.role-chip__role {
+  color: var(--gold);
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
 }
 
-.runtime-strip > span {
-  padding: 0 10px;
-  border-right: 1px solid var(--line-soft);
+.role-chip.is-active .role-chip__role {
+  color: var(--accent);
+}
+
+.role-chip__model {
+  overflow: hidden;
+  max-width: 150px;
+  color: inherit;
+  text-overflow: ellipsis;
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 10px;
+}
+
+.runtime-meta {
+  flex: 0 0 auto;
+  padding: 0 4px;
+  color: var(--ink-faint);
+  text-transform: uppercase;
   white-space: nowrap;
 }
-.runtime-strip > span:first-child {
-  max-width: 190px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
 
 .runtime-strip button {
-  margin-left: 9px;
+  margin-left: 2px;
   padding: 5px 7px;
   border: 1px solid var(--line);
   border-radius: 5px;
   color: #818995;
   background: var(--surface);
 }
+
 .runtime-strip button:not(:disabled) {
   cursor: pointer;
 }
 
-
 .runtime-strip .topbar-open-folder {
   border-color: rgba(0, 180, 255, 0.28);
-  color: #b9e985;
+  color: #9ad8ff;
   background: var(--accent-dim);
   letter-spacing: 0.04em;
   text-transform: none;
