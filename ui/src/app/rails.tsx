@@ -102,12 +102,18 @@ const Rail = ({ side, items, active, onSelect }: RailProps) => (
           className={`rail-button${active.includes(item.id) ? " is-active" : ""}`}
           type="button"
           key={item.id}
+          data-label={item.label}
+          data-shortcut={item.shortcut}
           title={`${item.label} · ${item.shortcut}`}
           aria-label={`${item.label} (${item.shortcut})`}
           aria-pressed={active.includes(item.id)}
           onClick={() => onSelect(item.id)}
         >
           <Icon target={item.id} />
+          <span className="rail-button__tip" aria-hidden="true">
+            <span className="rail-button__tip-label">{item.label}</span>
+            <kbd className="rail-button__tip-shortcut">{item.shortcut}</kbd>
+          </span>
         </button>
       ))}
     </div>
