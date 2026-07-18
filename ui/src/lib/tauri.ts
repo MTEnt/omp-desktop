@@ -16,6 +16,18 @@ export const api = {
   closeSession: (sessionId: string) =>
     invoke<void>("close_session", { sessionId }),
 
+  openPty: (sessionId: string, cwd: string) =>
+    invoke<void>("open_pty", { sessionId, cwd }),
+
+  writePty: (sessionId: string, data: string) =>
+    invoke<void>("write_pty", { sessionId, data }),
+
+  resizePty: (sessionId: string, cols: number, rows: number) =>
+    invoke<void>("resize_pty", { sessionId, cols, rows }),
+
+  closePty: (sessionId: string) =>
+    invoke<void>("close_pty", { sessionId }),
+
   prompt: (
     sessionId: string,
     message: string,

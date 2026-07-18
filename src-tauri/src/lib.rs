@@ -1,5 +1,6 @@
 mod commands;
 mod error;
+mod pty;
 mod rpc;
 mod session;
 mod settings;
@@ -29,6 +30,10 @@ pub fn run() {
             commands::list_sessions,
             commands::create_session,
             commands::close_session,
+            commands::open_pty,
+            commands::write_pty,
+            commands::resize_pty,
+            commands::close_pty,
             commands::prompt,
             commands::abort,
             commands::get_state,
