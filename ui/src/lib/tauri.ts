@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 
-import type { AppSettings, AvailableModel, ModelRolesSnapshot, SessionInfo } from "../session/types.ts";
+import type { AppSettings, AvailableModel, JobCard, ModelRolesSnapshot, PersistentAgent, RoleMemoryNote, RoleScratchpad, SessionInfo } from "../session/types.ts";
 
 export const api = {
   getSettings: () => invoke<AppSettings>("get_settings"),
@@ -66,4 +66,54 @@ export const api = {
       "rewrite_assistant_message",
       { sessionId, text, responseId: responseId ?? null },
     ),
+
+  listRoleNotes: (role: string, projectKey: string) =>
+    invoke<RoleMemoryNote[]>("list_role_notes", { role, projectKey }),
+  addRoleNote: (input: {
+    role: string;
+    projectKey: string;
+    kind: string;
+    title: string;
+    body: string;
+    sourceSessionId?: string | null;
+  }) =>
+    invoke<RoleMemoryNote>("add_role_note", {
+      role: input.role,
+      projectKey: input.projectKey,
+      kind: input.kind,
+      title: input.title,
+      body: input.body,
+      sourceSessionId: input.sourceSessionId ?? null,
+    }),
+  deleteRoleNote: (id: number) => invoke<void>("delete_role_note", { id }),
+  getRoleScratchpad: (role: string, projectKey: string) =>
+    invoke<RoleScratchpad>("get_role_scratchpad", { role, projectKey }),
+  saveRoleScratchpad: (role: string, projectKey: string, content: string) =>
+    invoke<RoleScratchpad>("save_role_scratchpad", { role, projectKey, content }),
+  listAgents: (projectKey?: string | null) =>
+    invoke<PersistentAgent[]>("list_agents", { projectKey: projectKey ?? null }),
+  listJobs: (projectKey?: string | null) =>
+    invoke<JobCard[]>("list_jobs", { projectKey: projectKey ?? null }),
+  upsertJob: (job: {
+    id: string;
+    projectKey: string;
+    projectLabel: string;
+    title: string;
+    detail: string;
+    status: string;
+    assigneeAgentId?: string | null;
+    assigneeRole?: string | null;
+    sessionId?: string | null;
+  }) =>
+    invoke<JobCard>("upsert_job", {
+      id: job.id,
+      projectKey: job.projectKey,
+      projectLabel: job.projectLabel,
+      title: job.title,
+      detail: job.detail,
+      status: job.status,
+      assigneeAgentId: job.assigneeAgentId ?? null,
+      assigneeRole: job.assigneeRole ?? null,
+      sessionId: job.sessionId ?? null,
+    }),
 };

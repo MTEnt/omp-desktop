@@ -29,6 +29,9 @@ const rightItems: RailItem[] = [
   { id: "plan", label: "Plan", shortcut: "⌘4" },
   { id: "activity", label: "Activity", shortcut: "⌘5" },
   { id: "subagents", label: "Subagents", shortcut: "⌘6" },
+  { id: "jobs", label: "Job board", shortcut: "⌘7" },
+  { id: "memory", label: "Role memory", shortcut: "⌘8" },
+  { id: "scratchpad", label: "Scratchpad", shortcut: "⌘9" },
 ];
 
 const Icon = ({ target }: { target: RailTarget }) => {
@@ -83,6 +86,30 @@ const Icon = ({ target }: { target: RailTarget }) => {
           <circle cx="5.5" cy="11" r="2" />
           <circle cx="18.5" cy="11" r="2" />
           <path d="M6.5 19c.4-3 2.2-4.5 5.5-4.5s5.1 1.5 5.5 4.5M2.5 18c.2-2 1.2-3 3-3M21.5 18c-.2-2-1.2-3-3-3" />
+        </>
+      );
+      break;
+    case "jobs":
+      shape = (
+        <>
+          <path d="M5 7h14v12H5z" />
+          <path d="M9 7V5.5h6V7M8 11h8M8 15h5" />
+        </>
+      );
+      break;
+    case "memory":
+      shape = (
+        <>
+          <path d="M8 4.5h8v15H8z" />
+          <path d="M10 8h4M10 12h4M10 16h3" />
+        </>
+      );
+      break;
+    case "scratchpad":
+      shape = (
+        <>
+          <path d="M6 4.5h9l3 3V19.5H6z" />
+          <path d="M15 4.5V8h3M9 12h6M9 15h4" />
         </>
       );
   }

@@ -15,6 +15,9 @@ import { ProjectPanel } from "../panels/project-panel.tsx";
 import { SessionsPanel } from "../panels/sessions-panel.tsx";
 import { SettingsPanel } from "../panels/settings-panel.tsx";
 import { SubagentsPanel } from "../panels/subagents-panel.tsx";
+import { JobsPanel } from "../panels/jobs-panel.tsx";
+import { MemoryPanel } from "../panels/memory-panel.tsx";
+import { ScratchpadPanel } from "../panels/scratchpad-panel.tsx";
 import { TerminalPanel } from "../panels/terminal-panel.tsx";
 import { CommandPalette } from "./palette.tsx";
 import { PixelPieLogo } from "./pixel-pie-logo.tsx";
@@ -28,9 +31,12 @@ const panelMeta: Record<PanelId, { label: string; eyebrow: string }> = {
   plan: { label: "Plan", eyebrow: "Execution" },
   activity: { label: "Activity", eyebrow: "Timeline" },
   subagents: { label: "Subagents", eyebrow: "Delegation" },
+  jobs: { label: "Job board", eyebrow: "Persistent work" },
+  memory: { label: "Role memory", eyebrow: "Long-term" },
+  scratchpad: { label: "Scratchpad", eyebrow: "Working notes" },
 };
 
-const rightPanels: PanelId[] = ["plan", "activity", "subagents"];
+const rightPanels: PanelId[] = ["plan", "activity", "subagents", "jobs", "memory", "scratchpad"];
 
 
 const SessionSidebar = () => {
@@ -123,6 +129,12 @@ const PanelBody = ({ panel }: { panel: PanelId }) => {
       return <ActivityPanel />;
     case "subagents":
       return <SubagentsPanel />;
+    case "jobs":
+      return <JobsPanel />;
+    case "memory":
+      return <MemoryPanel />;
+    case "scratchpad":
+      return <ScratchpadPanel />;
     case "terminal":
       return <TerminalPanel />;
   }

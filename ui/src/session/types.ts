@@ -78,3 +78,48 @@ export interface AvailableModel {
   reasoning: boolean;
   thinkingEfforts: string[];
 }
+
+export interface RoleMemoryNote {
+  id: number;
+  role: string;
+  projectKey: string;
+  kind: string;
+  title: string;
+  body: string;
+  sourceSessionId?: string | null;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface RoleScratchpad {
+  role: string;
+  projectKey: string;
+  content: string;
+  updatedAt: number;
+}
+
+export interface PersistentAgent {
+  id: string;
+  role: string;
+  displayName: string;
+  projectKey: string;
+  status: string;
+  currentJob?: string | null;
+  lastSessionId?: string | null;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface JobCard {
+  id: string;
+  projectKey: string;
+  projectLabel: string;
+  title: string;
+  detail: string;
+  status: string;
+  assigneeAgentId?: string | null;
+  assigneeRole?: string | null;
+  sessionId?: string | null;
+  createdAt: number;
+  updatedAt: number;
+}

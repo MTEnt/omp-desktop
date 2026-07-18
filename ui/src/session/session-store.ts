@@ -299,6 +299,42 @@ const toolIdentity = (
   };
 };
 
+
+const projectKeyFromCwd = (cwd: string) => cwd.replaceAll("\\", "/");
+
+const buildRoleMemoryPreamble = async (
+  role: string,
+  cwd: string,
+  sessionId: string,
+): Promise<string> => {
+  const projectKey = projectKeyFromCwd(cwd);
+  try {
+    const [notes, pad] = await Promise.all([
+      api.listRoleNotes(role, projectKey),
+      api.getRoleScratchpad(role, projectKey),
+    ]);
+    const noteLines = notes
+      .slice(0, 8)
+      .map((note) => `- (${note.kind}) ${note.title}: ${note.body}`)
+      .join("\n");
+    if (!pad.content.trim() && !noteLines) return "";
+    const parts = [
+      `<desktop-role-memory role="${role}" project="${projectKey}">`,
+      "Persistent role memory and scratchpad from OMP Desktop. Treat as prior context for this role; prefer current user instructions and repo state when they conflict.",
+    ];
+    if (pad.content.trim()) {
+      parts.push("Scratchpad:", pad.content.trim());
+    }
+    if (noteLines) {
+      parts.push("Memory notes:", noteLines);
+    }
+    parts.push(`Session: ${sessionId}`, "</desktop-role-memory>");
+    return `${parts.join("\n")}\n\n`;
+  } catch {
+    return "";
+  }
+};
+
 export const useSessionStore = create<SessionStore>()((set, get) => ({
   settings: null,
   modelRoles: [],
@@ -544,7 +580,11 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
     });
 
     try {
-      await api.prompt(sessionId, text, streamingBehavior);
+      const session = get().sessions.find((item) => item.id === sessionId);
+      const preamble = session
+        ? await buildRoleMemoryPreamble("default", session.cwd, sessionId)
+        : "";
+      await api.prompt(sessionId, `${preamble}${text}`, streamingBehavior);
       return true;
     } catch (error) {
       set((state) => {
