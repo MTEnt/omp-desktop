@@ -815,6 +815,8 @@ button:disabled {
 }
 
 .drawer {
+  display: flex;
+  flex-direction: column;
   position: absolute;
   z-index: 20;
   top: 0;
@@ -927,6 +929,13 @@ button:disabled {
   overflow: auto;
   scrollbar-color: #343b46 transparent;
   scrollbar-width: thin;
+}
+
+.panel-body--terminal {
+  display: flex;
+  flex: 1 1 auto;
+  padding: 0;
+  overflow: hidden;
 }
 
 .panel-empty {
@@ -1178,26 +1187,23 @@ button:disabled {
   font-size: 9px !important;
 }
 
-.terminal-placeholder {
-  display: flex;
-  gap: 8px;
-  min-height: 150px;
-  padding: 13px;
+.terminal-panel {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 160px;
+  padding: 10px;
+  overflow: hidden;
   border: 1px solid #242a32;
-  border-radius: 6px;
-  color: #68717d;
   background: #0c0e11;
-  font-family: "SFMono-Regular", Menlo, monospace;
-  font-size: 9px;
-  line-height: 1.5;
 }
 
-.terminal-placeholder > span {
-  color: var(--accent);
+.terminal-panel .xterm {
+  height: 100%;
 }
 
-.terminal-placeholder p {
-  margin: 0;
+.terminal-panel .xterm-viewport {
+  scrollbar-color: #343b46 transparent;
+  scrollbar-width: thin;
 }
 
 .plan-list section + section {

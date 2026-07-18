@@ -9,6 +9,7 @@ import { ProjectPanel } from "../panels/project-panel.tsx";
 import { SessionsPanel } from "../panels/sessions-panel.tsx";
 import { SettingsPanel } from "../panels/settings-panel.tsx";
 import { SubagentsPanel } from "../panels/subagents-panel.tsx";
+import { TerminalPanel } from "../panels/terminal-panel.tsx";
 
 const panelMeta: Record<PanelId, { label: string; eyebrow: string }> = {
   sessions: { label: "Sessions", eyebrow: "Workspace" },
@@ -98,12 +99,7 @@ const PanelBody = ({ panel }: { panel: PanelId }) => {
     case "subagents":
       return <SubagentsPanel />;
     case "terminal":
-      return (
-        <div className="terminal-placeholder" aria-label="Terminal placeholder">
-          <span>$</span>
-          <p>Terminal coming next</p>
-        </div>
-      );
+      return <TerminalPanel />;
   }
 };
 
@@ -229,7 +225,9 @@ export const Shell = () => {
                     onPin={() => togglePin(panel)}
                     onClose={() => togglePin(panel)}
                   />
-                  <div className="panel-body">
+                  <div
+                    className={`panel-body${panel === "terminal" ? " panel-body--terminal" : ""}`}
+                  >
                     <PanelBody panel={panel} />
                   </div>
                 </section>
@@ -248,7 +246,9 @@ export const Shell = () => {
                 onPin={pinDrawer}
                 onClose={closeDrawer}
               />
-              <div className="panel-body">
+              <div
+                className={`panel-body${drawer === "terminal" ? " panel-body--terminal" : ""}`}
+              >
                 <PanelBody panel={drawer} />
               </div>
             </aside>

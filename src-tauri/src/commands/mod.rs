@@ -1,4 +1,5 @@
 use crate::error::AppError;
+use crate::pty::{PtyManager, PtyOutput};
 use crate::session::{SessionInfo, SessionManager};
 use crate::settings::{self, AppSettings};
 use serde::Serialize;
@@ -9,6 +10,7 @@ use tokio::sync::Mutex;
 
 pub struct AppState {
     pub sessions: Mutex<SessionManager>,
+    pub ptys: Mutex<PtyManager>,
     pub settings: Mutex<AppSettings>,
     pub config_dir: PathBuf,
 }
@@ -21,6 +23,7 @@ pub fn initialize_app_state() -> Result<AppState, AppError> {
 
     Ok(AppState {
         sessions: Mutex::new(sessions),
+        ptys: Mutex::new(PtyManager::default()),
         settings: Mutex::new(app_settings),
         config_dir,
     })
@@ -98,7 +101,55 @@ pub async fn create_session(
 
 #[tauri::command(rename_all = "camelCase")]
 pub async fn close_session(state: State<'_, AppState>, session_id: String) -> Result<(), AppError> {
+    if let Err(error) = state.ptys.lock().await.close_pty(&session_id) {
+        log::warn!("unable to close PTY for session {session_id}: {error}");
+    }
     state.sessions.lock().await.close(&session_id).await
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub async fn open_pty(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    session_id: String,
+    cwd: String,
+) -> Result<(), AppError> {
+    let output_session_id = session_id.clone();
+    state
+        .ptys
+        .lock()
+        .await
+        .open_pty(&session_id, &PathBuf::from(cwd), move |data| {
+            let _ = app.emit(
+                "pty-output",
+                PtyOutput::new(output_session_id.clone(), data),
+            );
+        })?;
+    Ok(())
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub async fn write_pty(
+    state: State<'_, AppState>,
+    session_id: String,
+    data: String,
+) -> Result<(), AppError> {
+    state.ptys.lock().await.write_pty(&session_id, &data)
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub async fn resize_pty(
+    state: State<'_, AppState>,
+    session_id: String,
+    cols: u16,
+    rows: u16,
+) -> Result<(), AppError> {
+    state.ptys.lock().await.resize_pty(&session_id, cols, rows)
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub async fn close_pty(state: State<'_, AppState>, session_id: String) -> Result<(), AppError> {
+    state.ptys.lock().await.close_pty(&session_id)
 }
 
 #[tauri::command(rename_all = "camelCase")]
