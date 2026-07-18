@@ -1,9 +1,11 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { useLayoutStore } from "../app/layout-store.ts";
+import { MarkdownBody } from "./markdown.tsx";
 import {
   selectActiveSession,
   selectActiveTranscript,
+  selectIsActiveStreaming,
   useSessionStore,
 } from "./session-store.ts";
 import type { TranscriptItem } from "./types.ts";
@@ -16,7 +18,42 @@ const EmptyGlyph = () => (
   </div>
 );
 
-const TranscriptEntry = ({ item }: { item: TranscriptItem }) => {
+const ThinkingBlock = ({
+  thinking,
+  streaming,
+}: {
+  thinking: string;
+  streaming?: boolean;
+}) => {
+  const preview = useMemo(() => {
+    const compact = thinking.replace(/\s+/g, " ").trim();
+    if (compact.length <= 96) return compact;
+    return `${compact.slice(0, 96)}…`;
+  }, [thinking]);
+
+  return (
+    <details className="assistant-thinking">
+      <summary>
+        <span className="assistant-thinking__title">
+          {streaming ? "Thinking…" : "Thinking"}
+        </span>
+        <span className="assistant-thinking__preview">{preview}</span>
+        <span className="assistant-thinking__hint">expand</span>
+      </summary>
+      <div className="assistant-thinking__body">
+        <MarkdownBody content={thinking} className="md-body--thinking" />
+      </div>
+    </details>
+  );
+};
+
+const TranscriptEntry = ({
+  item,
+  streaming,
+}: {
+  item: TranscriptItem;
+  streaming?: boolean;
+}) => {
   switch (item.kind) {
     case "user":
       return (
@@ -24,7 +61,7 @@ const TranscriptEntry = ({ item }: { item: TranscriptItem }) => {
           <header>
             <span>You</span>
           </header>
-          <p>{item.text}</p>
+          <p className="user-message-text">{item.text}</p>
         </article>
       );
 
@@ -34,13 +71,14 @@ const TranscriptEntry = ({ item }: { item: TranscriptItem }) => {
           <header>
             <span>OMP</span>
           </header>
-          {item.thinking && (
-            <details className="assistant-thinking">
-              <summary>Thinking</summary>
-              <p>{item.thinking}</p>
-            </details>
-          )}
-          <p>{item.text}</p>
+          {item.thinking ? (
+            <ThinkingBlock thinking={item.thinking} streaming={streaming && !item.text} />
+          ) : null}
+          {item.text ? (
+            <MarkdownBody content={item.text} className="md-body--assistant" />
+          ) : streaming && !item.thinking ? (
+            <p className="assistant-pending">OMP is responding…</p>
+          ) : null}
         </article>
       );
 
@@ -48,11 +86,13 @@ const TranscriptEntry = ({ item }: { item: TranscriptItem }) => {
       return (
         <section className={`tool-card tool-card--${item.status}`}>
           <header>
-            <span className="tool-card__mark" aria-hidden="true">›_</span>
+            <span className="tool-card__mark" aria-hidden="true">
+              ›_
+            </span>
             <strong>{item.name}</strong>
             <span className="tool-card__status">{item.status}</span>
           </header>
-          {item.detail && <pre>{item.detail}</pre>}
+          {item.detail ? <pre>{item.detail}</pre> : null}
         </section>
       );
 
@@ -70,6 +110,7 @@ export const Transcript = () => {
   const activeSessionId = useSessionStore((state) => state.activeSessionId);
   const activeSession = useSessionStore(selectActiveSession) ?? null;
   const items = useSessionStore(selectActiveTranscript);
+  const isStreaming = useSessionStore(selectIsActiveStreaming);
   const error = useSessionStore((state) => state.error);
   const openFolder = useSessionStore((state) => state.openFolder);
   const restartSession = useSessionStore((state) => state.restartSession);
@@ -90,7 +131,7 @@ export const Transcript = () => {
     const viewport = viewportRef.current;
     if (!viewport || !followOutputRef.current) return;
     viewport.scrollTop = viewport.scrollHeight;
-  }, [activeSessionId, items]);
+  }, [activeSessionId, items, isStreaming]);
 
   const chooseFolder = async () => {
     setOpening(true);
@@ -127,6 +168,8 @@ export const Transcript = () => {
       error.toLowerCase().includes("binary"));
 
   const sessionExited = activeSession?.status === "exited";
+  const lastAssistantId =
+    [...items].reverse().find((item) => item.kind === "assistant")?.id ?? null;
 
   return (
     <div
@@ -204,14 +247,22 @@ export const Transcript = () => {
           <span className="eyebrow">OMP is ready</span>
           <h1>What should OMP build?</h1>
           <p>
-            Message OMP below. Thinking, tool calls, and streamed replies stay
-            together in this transcript.
+            Message OMP below. Thinking stays collapsed; replies render as
+            markdown so code and lists stay readable.
           </p>
         </div>
       ) : (
         <div className="transcript__items">
           {items.map((item) => (
-            <TranscriptEntry item={item} key={`${item.kind}-${item.id}`} />
+            <TranscriptEntry
+              item={item}
+              key={`${item.kind}-${item.id}`}
+              streaming={
+                isStreaming &&
+                item.kind === "assistant" &&
+                item.id === lastAssistantId
+              }
+            />
           ))}
         </div>
       )}

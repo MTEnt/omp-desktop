@@ -530,12 +530,17 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
     if (type === "message_update") {
       const assistantEvent = asRecord(event.assistantMessageEvent);
       const delta = assistantEvent
-        ? readString(assistantEvent, "delta", "text")
-        : readString(event, "delta", "text");
+        ? readString(assistantEvent, "delta", "text", "thinking")
+        : readString(event, "delta", "text", "thinking");
       const eventType = assistantEvent
         ? readString(assistantEvent, "type")
-        : readString(event, "messageType");
-      if (eventType !== "text_delta" || delta === undefined) return;
+        : readString(event, "messageType", "type");
+      const isText = eventType === "text_delta" || eventType === "text";
+      const isThinking =
+        eventType === "thinking_delta" ||
+        eventType === "thinking" ||
+        eventType === "reasoning_delta";
+      if ((!isText && !isThinking) || delta === undefined) return;
 
       set((state) => {
         const current = state.transcripts[sessionId] ?? [];
@@ -544,18 +549,19 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
             ? readString(assistantEvent, "messageId")
             : undefined) ?? readString(event, "messageId");
         const last = current.at(-1);
-
-        if (
+        const canMerge =
           last?.kind === "assistant" &&
-          (messageId === undefined || messageId === last.id)
-        ) {
+          (messageId === undefined || messageId === last.id);
+
+        if (canMerge && last?.kind === "assistant") {
+          const nextItem =
+            isThinking
+              ? { ...last, thinking: `${last.thinking ?? ""}${delta}` }
+              : { ...last, text: `${last.text}${delta}` };
           return {
             transcripts: {
               ...state.transcripts,
-              [sessionId]: [
-                ...current.slice(0, -1),
-                { ...last, text: last.text + delta },
-              ],
+              [sessionId]: [...current.slice(0, -1), nextItem],
             },
           };
         }
@@ -568,7 +574,8 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
               {
                 id: messageId ?? nextItemId(current, "assistant"),
                 kind: "assistant",
-                text: delta,
+                text: isText ? delta : "",
+                thinking: isThinking ? delta : undefined,
               },
             ],
           },
