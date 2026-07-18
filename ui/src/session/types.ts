@@ -37,6 +37,13 @@ export interface ActivityItem {
   text: string;
 }
 
+export interface SubagentInfo {
+  id: string;
+  name: string;
+  status: string;
+  progress?: string;
+}
+
 export interface TodoTask {
   id: string;
   content: string;

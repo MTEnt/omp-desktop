@@ -1,10 +1,14 @@
-import type { ReactNode } from "react";
-
 import { useLayoutStore, type PanelId } from "./layout-store.ts";
 import { LeftRail, RightRail, type RailTarget } from "./rails.tsx";
 import { useSessionStore } from "../session/session-store.ts";
 import { Composer } from "../session/composer.tsx";
 import { Transcript } from "../session/transcript.tsx";
+import { ActivityPanel } from "../panels/activity-panel.tsx";
+import { PlanPanel } from "../panels/plan-panel.tsx";
+import { ProjectPanel } from "../panels/project-panel.tsx";
+import { SessionsPanel } from "../panels/sessions-panel.tsx";
+import { SettingsPanel } from "../panels/settings-panel.tsx";
+import { SubagentsPanel } from "../panels/subagents-panel.tsx";
 
 const panelMeta: Record<PanelId, { label: string; eyebrow: string }> = {
   sessions: { label: "Sessions", eyebrow: "Workspace" },
@@ -18,12 +22,6 @@ const panelMeta: Record<PanelId, { label: string; eyebrow: string }> = {
 
 const rightPanels: PanelId[] = ["plan", "activity", "subagents"];
 
-const EmptyPanel = ({ children }: { children: ReactNode }) => (
-  <div className="panel-empty">
-    <span className="panel-empty__rule" />
-    <p>{children}</p>
-  </div>
-);
 
 const SessionTabs = () => {
   const sessions = useSessionStore((state) => state.sessions);
@@ -86,164 +84,25 @@ const SessionTabs = () => {
 };
 
 const PanelBody = ({ panel }: { panel: PanelId }) => {
-  const sessions = useSessionStore((state) => state.sessions);
-  const activeSessionId = useSessionStore((state) => state.activeSessionId);
-  const settings = useSessionStore((state) => state.settings);
-  const todosBySession = useSessionStore((state) => state.todos);
-  const activityBySession = useSessionStore((state) => state.activity);
-  const subagentsBySession = useSessionStore((state) => state.subagents);
-  const todos = activeSessionId
-    ? (todosBySession[activeSessionId] ?? [])
-    : [];
-  const activity = activeSessionId
-    ? (activityBySession[activeSessionId] ?? [])
-    : [];
-  const subagents = activeSessionId
-    ? (subagentsBySession[activeSessionId] ?? [])
-    : [];
-  const setActive = useSessionStore((state) => state.setActive);
-  const streaming = useSessionStore((state) => state.streaming);
-  const closeSession = useSessionStore((state) => state.closeSession);
-  const activeSession = sessions.find(
-    (session) => session.id === activeSessionId,
-  );
-
   switch (panel) {
     case "sessions":
-      return sessions.length > 0 ? (
-        <div className="session-list">
-          {sessions.map((session) => {
-            const isActive = session.id === activeSessionId;
-            const isStreaming = streaming[session.id] === true;
-
-            return (
-              <div
-                className={`session-row${isActive ? " is-current" : ""}`}
-                key={session.id}
-              >
-                <button
-                  type="button"
-                  className="session-row__select"
-                  aria-current={isActive ? "page" : undefined}
-                  onClick={() => setActive(session.id)}
-                >
-                  <span className={`status-dot status-dot--${session.status}`} />
-                  <span className="session-row__copy">
-                    <strong>{session.title}</strong>
-                    <small>{session.cwd}</small>
-                  </span>
-                </button>
-                <span className="session-row__status">
-                  {isStreaming ? "streaming" : session.status}
-                </span>
-                <button
-                  type="button"
-                  className="session-row__close"
-                  title={`Close ${session.title}`}
-                  aria-label={`Close ${session.title}`}
-                  onClick={() => void closeSession(session.id)}
-                >
-                  <svg viewBox="0 0 16 16" aria-hidden="true">
-                    <path d="m4 4 8 8M12 4 4 12" />
-                  </svg>
-                </button>
-              </div>
-            );
-          })}
-        </div>
-      ) : (
-        <EmptyPanel>Sessions will appear here after a project is opened.</EmptyPanel>
-      );
-
+      return <SessionsPanel />;
     case "project":
-      return activeSession ? (
-        <dl className="detail-list">
-          <div>
-            <dt>Working directory</dt>
-            <dd>{activeSession.cwd}</dd>
-          </div>
-          <div>
-            <dt>Profile</dt>
-            <dd>{activeSession.profile ?? "Default"}</dd>
-          </div>
-          <div>
-            <dt>Runtime</dt>
-            <dd>{activeSession.status}</dd>
-          </div>
-        </dl>
-      ) : (
-        <EmptyPanel>Project context is available once a session is active.</EmptyPanel>
-      );
-
+      return <ProjectPanel />;
     case "settings":
-      return (
-        <dl className="detail-list">
-          <div>
-            <dt>Approval mode</dt>
-            <dd>{settings?.approvalMode ?? "yolo"}</dd>
-          </div>
-          <div>
-            <dt>Default model</dt>
-            <dd>{settings?.defaultModel ?? "OMP default"}</dd>
-          </div>
-          <div>
-            <dt>Theme</dt>
-            <dd>{settings?.theme ?? "Dark"}</dd>
-          </div>
-        </dl>
-      );
-
+      return <SettingsPanel />;
+    case "plan":
+      return <PlanPanel />;
+    case "activity":
+      return <ActivityPanel />;
+    case "subagents":
+      return <SubagentsPanel />;
     case "terminal":
       return (
         <div className="terminal-placeholder" aria-label="Terminal placeholder">
           <span>$</span>
-          <p>Terminal connection is not enabled in this foundation build.</p>
+          <p>Terminal coming next</p>
         </div>
-      );
-
-    case "plan":
-      return todos.length > 0 ? (
-        <div className="plan-list">
-          {todos.map((phase) => (
-            <section key={phase.id}>
-              <h3>{phase.name}</h3>
-              <ul>
-                {phase.tasks.map((task) => (
-                  <li key={task.id}>
-                    <span className={`task-state task-state--${task.status}`} />
-                    <span>{task.content}</span>
-                  </li>
-                ))}
-              </ul>
-            </section>
-          ))}
-        </div>
-      ) : (
-        <EmptyPanel>OMP task phases will collect here during a run.</EmptyPanel>
-      );
-
-    case "activity":
-      return activity.length > 0 ? (
-        <ol className="activity-list">
-          {activity.map((item) => (
-            <li key={item.id}>
-              <time>{new Date(item.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</time>
-              <span>{item.text}</span>
-            </li>
-          ))}
-        </ol>
-      ) : (
-        <EmptyPanel>Tool execution will form a quiet timeline here.</EmptyPanel>
-      );
-
-    case "subagents":
-      return subagents.length > 0 ? (
-        <div className="subagent-count">
-          <strong>{subagents.length}</strong>
-          <span>subagent{subagents.length === 1 ? "" : "s"} reporting</span>
-        </div>
-      ) : (
-        <EmptyPanel>Delegated agents will report progress here.</EmptyPanel>
       );
   }
 };
