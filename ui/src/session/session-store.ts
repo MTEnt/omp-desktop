@@ -26,11 +26,21 @@ export interface SessionStore {
   bootstrap: () => Promise<void>;
   setActive: (sessionId: string | null) => void;
   openFolder: (cwd?: string) => Promise<void>;
+  closeSession: (sessionId: string) => Promise<void>;
   send: (message: string, streamingBehavior?: string) => Promise<boolean>;
   abort: () => Promise<void>;
   applyOmpEvent: (sessionId: string, event: unknown) => void;
   markExited: (sessionId: string) => void;
 }
+
+const EMPTY_TRANSCRIPT: TranscriptItem[] = [];
+
+export const selectActiveTranscript = (
+  state: SessionStore,
+): TranscriptItem[] =>
+  state.activeSessionId
+    ? (state.transcripts[state.activeSessionId] ?? EMPTY_TRANSCRIPT)
+    : EMPTY_TRANSCRIPT;
 
 const isRecord = (value: unknown): value is OmpEvent =>
   typeof value === "object" && value !== null && !Array.isArray(value);
@@ -57,6 +67,18 @@ const formatDetail = (value: unknown): string => {
 
 const errorMessage = (error: unknown): string =>
   error instanceof Error ? error.message : formatDetail(error) || "Unknown error";
+
+const isAlreadyClosedError = (error: unknown): boolean =>
+  errorMessage(error).toLowerCase().includes("session not found");
+
+const withoutSession = <T>(
+  values: Record<string, T>,
+  sessionId: string,
+): Record<string, T> => {
+  const next = { ...values };
+  delete next[sessionId];
+  return next;
+};
 
 const firstDetail = (event: OmpEvent, ...keys: string[]): string => {
   for (const key of keys) {
@@ -167,6 +189,46 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
     }
   },
 
+  closeSession: async (sessionId) => {
+    const current = get();
+    const closingIndex = current.sessions.findIndex(
+      (session) => session.id === sessionId,
+    );
+    if (closingIndex === -1) return;
+
+    set((state) => {
+      const sessions = state.sessions.filter(
+        (session) => session.id !== sessionId,
+      );
+      const activeSessionId =
+        state.activeSessionId === sessionId
+          ? (sessions[closingIndex]?.id ??
+            sessions[closingIndex - 1]?.id ??
+            null)
+          : state.activeSessionId;
+
+      return {
+        sessions,
+        activeSessionId,
+        transcripts: withoutSession(state.transcripts, sessionId),
+        activity: withoutSession(state.activity, sessionId),
+        todos: withoutSession(state.todos, sessionId),
+        subagents: withoutSession(state.subagents, sessionId),
+        states: withoutSession(state.states, sessionId),
+        streaming: withoutSession(state.streaming, sessionId),
+        error: null,
+      };
+    });
+
+    try {
+      await api.closeSession(sessionId);
+    } catch (error) {
+      if (!isAlreadyClosedError(error)) {
+        set({ error: `Unable to close session: ${errorMessage(error)}` });
+      }
+    }
+  },
+
   send: async (message, streamingBehavior) => {
     const sessionId = get().activeSessionId;
     const text = message.trim();
@@ -236,6 +298,7 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
   },
 
   applyOmpEvent: (sessionId, event) => {
+    if (!get().sessions.some((session) => session.id === sessionId)) return;
     if (!isRecord(event)) return;
     const type = readString(event, "type");
 
@@ -365,11 +428,13 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
     });
   },
 
-  markExited: (sessionId) =>
+  markExited: (sessionId) => {
+    if (!get().sessions.some((session) => session.id === sessionId)) return;
     set((state) => ({
       sessions: state.sessions.map((session) =>
         session.id === sessionId ? { ...session, status: "exited" } : session,
       ),
       streaming: { ...state.streaming, [sessionId]: false },
-    })),
+    }));
+  },
 }));

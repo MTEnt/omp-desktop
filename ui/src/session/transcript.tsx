@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 
-import { useSessionStore } from "./session-store.ts";
+import {
+  selectActiveTranscript,
+  useSessionStore,
+} from "./session-store.ts";
 import type { TranscriptItem } from "./types.ts";
-
-const EMPTY_TRANSCRIPT: TranscriptItem[] = [];
 
 const EmptyGlyph = () => (
   <div className="transcript-empty__glyph" aria-hidden="true">
@@ -65,11 +66,7 @@ const TranscriptEntry = ({ item }: { item: TranscriptItem }) => {
 
 export const Transcript = () => {
   const activeSessionId = useSessionStore((state) => state.activeSessionId);
-  const items = useSessionStore((state) =>
-    state.activeSessionId
-      ? (state.transcripts[state.activeSessionId] ?? EMPTY_TRANSCRIPT)
-      : EMPTY_TRANSCRIPT,
-  );
+  const items = useSessionStore(selectActiveTranscript);
   const error = useSessionStore((state) => state.error);
   const openFolder = useSessionStore((state) => state.openFolder);
   const viewportRef = useRef<HTMLDivElement>(null);
