@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { open } from "@tauri-apps/plugin-dialog";
 
 import { api } from "../lib/tauri.ts";
 import type {
@@ -20,20 +21,22 @@ export interface SessionStore {
   todos: Record<string, TodoPhase[]>;
   subagents: Record<string, unknown[]>;
   states: Record<string, unknown>;
+  error: string | null;
   streaming: Record<string, boolean>;
   bootstrap: () => Promise<void>;
   setActive: (sessionId: string | null) => void;
   openFolder: (cwd?: string) => Promise<void>;
-  send: (message: string, streamingBehavior?: string) => Promise<void>;
+  send: (message: string, streamingBehavior?: string) => Promise<boolean>;
   abort: () => Promise<void>;
-  applyOmpEvent: (sessionId: string, event: OmpEvent) => void;
+  applyOmpEvent: (sessionId: string, event: unknown) => void;
   markExited: (sessionId: string) => void;
 }
 
-const asRecord = (value: unknown): Record<string, unknown> | null =>
-  typeof value === "object" && value !== null && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : null;
+const isRecord = (value: unknown): value is OmpEvent =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
+
+const asRecord = (value: unknown): OmpEvent | null =>
+  isRecord(value) ? value : null;
 
 const readString = (
   value: Record<string, unknown>,
@@ -51,6 +54,9 @@ const formatDetail = (value: unknown): string => {
   if (value === undefined || value === null) return "";
   return JSON.stringify(value, null, 2) ?? String(value);
 };
+
+const errorMessage = (error: unknown): string =>
+  error instanceof Error ? error.message : formatDetail(error) || "Unknown error";
 
 const firstDetail = (event: OmpEvent, ...keys: string[]): string => {
   for (const key of keys) {
@@ -105,6 +111,7 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
   todos: {},
   subagents: {},
   states: {},
+  error: null,
   streaming: {},
 
   bootstrap: async () => {
@@ -130,21 +137,40 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
   setActive: (sessionId) => set({ activeSessionId: sessionId }),
 
   openFolder: async (cwd) => {
-    if (!cwd) return;
-    const session = await api.createSession(cwd);
-    set((state) => ({
-      sessions: [
-        ...state.sessions.filter((candidate) => candidate.id !== session.id),
-        session,
-      ],
-      activeSessionId: session.id,
-    }));
+    try {
+      const selectedCwd =
+        cwd ??
+        (await open({
+          directory: true,
+          multiple: false,
+          title: "Open folder",
+        }));
+      if (!selectedCwd) return;
+
+      const session = await api.createSession(selectedCwd);
+      set((state) => ({
+        sessions: [
+          ...state.sessions.filter((candidate) => candidate.id !== session.id),
+          session,
+        ],
+        activeSessionId: session.id,
+        transcripts: { ...state.transcripts, [session.id]: [] },
+        activity: { ...state.activity, [session.id]: [] },
+        todos: { ...state.todos, [session.id]: [] },
+        subagents: { ...state.subagents, [session.id]: [] },
+        states: { ...state.states, [session.id]: {} },
+        streaming: { ...state.streaming, [session.id]: false },
+        error: null,
+      }));
+    } catch (error) {
+      set({ error: `Unable to open folder: ${errorMessage(error)}` });
+    }
   },
 
   send: async (message, streamingBehavior) => {
     const sessionId = get().activeSessionId;
     const text = message.trim();
-    if (!sessionId || !text) return;
+    if (!sessionId || !text) return false;
 
     set((state) => {
       const current = state.transcripts[sessionId] ?? [];
@@ -159,16 +185,58 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
       };
     });
 
-    await api.prompt(sessionId, text, streamingBehavior);
+    try {
+      await api.prompt(sessionId, text, streamingBehavior);
+      return true;
+    } catch (error) {
+      set((state) => {
+        const current = state.transcripts[sessionId] ?? [];
+        return {
+          transcripts: {
+            ...state.transcripts,
+            [sessionId]: [
+              ...current,
+              {
+                id: nextItemId(current, "system"),
+                kind: "system",
+                text: `Unable to send message: ${errorMessage(error)}`,
+              },
+            ],
+          },
+        };
+      });
+      return false;
+    }
   },
 
   abort: async () => {
     const sessionId = get().activeSessionId;
     if (!sessionId) return;
-    await api.abort(sessionId);
+
+    try {
+      await api.abort(sessionId);
+    } catch (error) {
+      set((state) => {
+        const current = state.transcripts[sessionId] ?? [];
+        return {
+          transcripts: {
+            ...state.transcripts,
+            [sessionId]: [
+              ...current,
+              {
+                id: nextItemId(current, "system"),
+                kind: "system",
+                text: `Unable to abort: ${errorMessage(error)}`,
+              },
+            ],
+          },
+        };
+      });
+    }
   },
 
   applyOmpEvent: (sessionId, event) => {
+    if (!isRecord(event)) return;
     const type = readString(event, "type");
 
     if (type === "agent_start" || type === "agent_end") {

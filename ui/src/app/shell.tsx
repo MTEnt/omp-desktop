@@ -3,6 +3,8 @@ import type { ReactNode } from "react";
 import { useLayoutStore, type PanelId } from "./layout-store.ts";
 import { LeftRail, RightRail, type RailTarget } from "./rails.tsx";
 import { useSessionStore } from "../session/session-store.ts";
+import { Composer } from "../session/composer.tsx";
+import { Transcript } from "../session/transcript.tsx";
 
 const panelMeta: Record<PanelId, { label: string; eyebrow: string }> = {
   sessions: { label: "Sessions", eyebrow: "Workspace" },
@@ -214,6 +216,7 @@ export const Shell = () => {
   const sessions = useSessionStore((state) => state.sessions);
   const activeSessionId = useSessionStore((state) => state.activeSessionId);
   const settings = useSessionStore((state) => state.settings);
+  const openFolder = useSessionStore((state) => state.openFolder);
   const activeSession = sessions.find(
     (session) => session.id === activeSessionId,
   );
@@ -255,6 +258,13 @@ export const Shell = () => {
           <span>{settings?.defaultModel ?? "model —"}</span>
           <span>{settings?.defaultThinking ?? "thinking —"}</span>
           <span>ctx —</span>
+          <button
+            className="topbar-open-folder"
+            type="button"
+            onClick={() => void openFolder()}
+          >
+            Open folder
+          </button>
           <button type="button" title="Command palette · ⌘K" disabled>
             <kbd>⌘K</kbd>
           </button>
@@ -266,35 +276,8 @@ export const Shell = () => {
 
         <div className="stage">
           <main className="chat" aria-label="Chat transcript">
-            <div className="transcript-empty">
-              <div className="transcript-empty__glyph" aria-hidden="true">
-                <span />
-                <span />
-                <span />
-              </div>
-              <span className="eyebrow">Quiet by default</span>
-              <h1>Think in the center.<br />Keep context at the edges.</h1>
-              <p>
-                Select Sessions or Project from the left rail to prepare a
-                workspace. Live OMP conversation wiring arrives in the next pass.
-              </p>
-            </div>
-
-            <form className="composer" aria-label="Message composer">
-              <label htmlFor="message">Message OMP</label>
-              <textarea
-                id="message"
-                rows={2}
-                placeholder="Composer connection pending…"
-                disabled
-              />
-              <div className="composer__footer">
-                <span>Enter to send · ⌘Enter to steer</span>
-                <button type="submit" disabled>
-                  Send
-                </button>
-              </div>
-            </form>
+            <Transcript />
+            <Composer />
           </main>
 
           {pinned.length > 0 && (
