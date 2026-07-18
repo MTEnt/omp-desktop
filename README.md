@@ -1,10 +1,18 @@
 # OMP Desktop
 
-Tauri 2 desktop shell with a React/Vite frontend.
+macOS (Apple Silicon) desktop cockpit for [OMP](https://github.com/) (`omp` CLI) coding-agent sessions.
+
+Zen-default UI with expandable panels, multi-tab `omp --mode rpc` sessions, live transcript, plan/activity/subagents, settings, command palette, and an app-owned PTY terminal.
+
+## Requirements
+
+- macOS Apple Silicon
+- Rust toolchain (`rustc` / `cargo`)
+- Node.js 20+ and npm
+- [Tauri 2 system dependencies](https://v2.tauri.app/start/prerequisites/)
+- `omp` on PATH (v17+), or set the binary path in Settings
 
 ## Development
-
-Prerequisites: Node.js/npm, Rust, and the [Tauri system dependencies](https://v2.tauri.app/start/prerequisites/).
 
 ```bash
 npm install
@@ -12,4 +20,50 @@ npm --prefix ui install
 npm run dev
 ```
 
-Build the frontend with `npm run ui:build`, or build the desktop application with `npm run build`.
+Other scripts:
+
+```bash
+npm run ui:dev      # Vite only
+npm run ui:build    # frontend production build
+npm run build       # tauri build
+```
+
+Rust tests:
+
+```bash
+cd src-tauri && cargo test
+```
+
+## Architecture
+
+- **Rust / Tauri host** (`src-tauri/`): spawns one `omp --mode rpc` child per session tab, JSONL RPC client, settings, PTY, Tauri commands + `omp-event` bridge.
+- **React UI** (`ui/`): Zen shell, transcript/composer, pinnable panels, palette, xterm terminal view.
+- **OMP** remains source of truth for agent loop, tools, session files, and auth.
+
+Design spec: `docs/superpowers/specs/2026-07-19-omp-desktop-design.md`  
+Implementation plan: `docs/superpowers/plans/2026-07-19-omp-desktop.md`
+
+## Defaults
+
+- Approval mode: **yolo** (`--approval-mode yolo` + `--auto-approve`) unless changed in Settings.
+- Layout: Zen (icon rails); click to drawer, pin to dock.
+- Terminal: app-owned PTY per session (not the OMP TUI).
+
+## Manual QA checklist
+
+1. App launches via `npm run dev`
+2. Open folder → session becomes ready
+3. Prompt streams assistant text
+4. Coding prompt shows tool cards
+5. Two tabs on two folders stay isolated
+6. Plan panel updates when OMP todos change
+7. Activity lists tools
+8. Terminal `pwd` matches session cwd
+9. Yolo path shows no approval chrome
+10. Settings → approval mode persists for next session
+11. Kill omp child → exited banner + Restart works
+12. Missing `omp` → error points at Settings / PATH
+
+## Repo
+
+https://github.com/MTEnt/omp-desktop

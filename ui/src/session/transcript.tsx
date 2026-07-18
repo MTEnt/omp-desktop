@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 
+import { useLayoutStore } from "../app/layout-store.ts";
 import {
   selectActiveTranscript,
   useSessionStore,
@@ -66,26 +67,31 @@ const TranscriptEntry = ({ item }: { item: TranscriptItem }) => {
 
 export const Transcript = () => {
   const activeSessionId = useSessionStore((state) => state.activeSessionId);
+  const activeSession = useSessionStore((state) =>
+    state.sessions.find((session) => session.id === state.activeSessionId) ??
+    null,
+  );
   const items = useSessionStore(selectActiveTranscript);
   const error = useSessionStore((state) => state.error);
   const openFolder = useSessionStore((state) => state.openFolder);
+  const restartSession = useSessionStore((state) => state.restartSession);
+  const clearError = useSessionStore((state) => state.clearError);
+  const openSettings = () => {
+    useLayoutStore.getState().openDrawer("settings");
+  };
   const viewportRef = useRef<HTMLDivElement>(null);
   const followOutputRef = useRef(true);
   const [opening, setOpening] = useState(false);
+  const [restarting, setRestarting] = useState(false);
 
   useEffect(() => {
     followOutputRef.current = true;
   }, [activeSessionId]);
 
   useEffect(() => {
-    if (!followOutputRef.current) return;
     const viewport = viewportRef.current;
-    if (!viewport) return;
-
-    const frame = requestAnimationFrame(() => {
-      viewport.scrollTop = viewport.scrollHeight;
-    });
-    return () => cancelAnimationFrame(frame);
+    if (!viewport || !followOutputRef.current) return;
+    viewport.scrollTop = viewport.scrollHeight;
   }, [activeSessionId, items]);
 
   const chooseFolder = async () => {
@@ -97,13 +103,32 @@ export const Transcript = () => {
     }
   };
 
+  const handleRestart = async () => {
+    if (!activeSessionId) return;
+    setRestarting(true);
+    try {
+      await restartSession(activeSessionId);
+    } finally {
+      setRestarting(false);
+    }
+  };
+
   const updateFollowOutput = () => {
     const viewport = viewportRef.current;
     if (!viewport) return;
-    const remaining =
+    const distance =
       viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight;
-    followOutputRef.current = remaining < 96;
+    followOutputRef.current = distance < 80;
   };
+
+  const ompMissing =
+    typeof error === "string" &&
+    error.toLowerCase().includes("omp") &&
+    (error.toLowerCase().includes("not found") ||
+      error.toLowerCase().includes("path") ||
+      error.toLowerCase().includes("binary"));
+
+  const sessionExited = activeSession?.status === "exited";
 
   return (
     <div
@@ -114,7 +139,26 @@ export const Transcript = () => {
     >
       {error && (
         <div className="transcript-error" role="alert">
-          {error}
+          <div className="transcript-error__copy">{error}</div>
+          <div className="transcript-error__actions">
+            {ompMissing && (
+              <button type="button" onClick={openSettings}>
+                Open Settings
+              </button>
+            )}
+            {sessionExited && activeSessionId && (
+              <button
+                type="button"
+                disabled={restarting}
+                onClick={() => void handleRestart()}
+              >
+                {restarting ? "Restarting…" : "Restart session"}
+              </button>
+            )}
+            <button type="button" onClick={() => clearError()}>
+              Dismiss
+            </button>
+          </div>
         </div>
       )}
 
@@ -122,10 +166,14 @@ export const Transcript = () => {
         <div className="transcript-empty">
           <EmptyGlyph />
           <span className="eyebrow">Local context first</span>
-          <h1>Open a folder.<br />Start the conversation.</h1>
+          <h1>
+            Open a folder.
+            <br />
+            Start the conversation.
+          </h1>
           <p>
             OMP runs in the project you choose and streams its work back into
-            this transcript.
+            this transcript. Requires <code>omp</code> on PATH (v17+).
           </p>
           <button
             className="open-folder-cta"
@@ -134,6 +182,21 @@ export const Transcript = () => {
             onClick={() => void chooseFolder()}
           >
             {opening ? "Opening…" : "Open folder"}
+          </button>
+        </div>
+      ) : sessionExited && items.length === 0 ? (
+        <div className="transcript-empty transcript-empty--ready">
+          <EmptyGlyph />
+          <span className="eyebrow">Session exited</span>
+          <h1>The OMP process stopped.</h1>
+          <p>Restart to spawn a fresh RPC session in the same folder.</p>
+          <button
+            className="open-folder-cta"
+            type="button"
+            disabled={restarting}
+            onClick={() => void handleRestart()}
+          >
+            {restarting ? "Restarting…" : "Restart session"}
           </button>
         </div>
       ) : items.length === 0 ? (

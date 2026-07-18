@@ -29,6 +29,7 @@ export interface SessionStore {
   bootstrap: () => Promise<void>;
   setActive: (sessionId: string | null) => void;
   openFolder: (cwd?: string, resume?: string) => Promise<void>;
+  restartSession: (sessionId: string) => Promise<void>;
   closeSession: (sessionId: string) => Promise<void>;
   refreshState: (sessionId: string) => Promise<void>;
   loadSubagents: (sessionId: string) => Promise<void>;
@@ -36,6 +37,7 @@ export interface SessionStore {
   abort: () => Promise<void>;
   applyOmpEvent: (sessionId: string, event: unknown) => void;
   markExited: (sessionId: string) => void;
+  clearError: () => void;
 }
 
 const EMPTY_TRANSCRIPT: TranscriptItem[] = [];
@@ -159,6 +161,20 @@ const errorMessage = (error: unknown): string =>
 
 const isAlreadyClosedError = (error: unknown): boolean =>
   errorMessage(error).toLowerCase().includes("session not found");
+
+const formatOpenSessionError = (error: unknown): string => {
+  const message = errorMessage(error);
+  const lower = message.toLowerCase();
+  if (
+    lower.includes("omp not found") ||
+    lower.includes("no such file") ||
+    lower.includes("enoent") ||
+    (lower.includes("omp") && lower.includes("path"))
+  ) {
+    return `${message} Open Settings to set the omp binary path, or install omp and ensure it is on PATH.`;
+  }
+  return `Unable to open folder: ${message}`;
+};
 
 const withoutSession = <T>(
   values: Record<string, T>,
@@ -294,9 +310,27 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
         error: null,
       }));
     } catch (error) {
-      set({ error: `Unable to open folder: ${errorMessage(error)}` });
+      set({ error: formatOpenSessionError(error) });
     }
   },
+
+  restartSession: async (sessionId) => {
+    const session = get().sessions.find((candidate) => candidate.id === sessionId);
+    if (!session) {
+      set({ error: "Unable to restart: session not found." });
+      return;
+    }
+
+    const cwd = session.cwd;
+    try {
+      await get().closeSession(sessionId);
+    } catch {
+      // closeSession already surfaces non-fatal errors; continue restart.
+    }
+    await get().openFolder(cwd);
+  },
+
+  clearError: () => set({ error: null }),
 
   closeSession: async (sessionId) => {
     const current = get();
@@ -583,6 +617,10 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
         session.id === sessionId ? { ...session, status: "exited" } : session,
       ),
       streaming: { ...state.streaming, [sessionId]: false },
+      error:
+        state.activeSessionId === sessionId
+          ? "Session process exited. Restart to continue in this folder."
+          : state.error,
     }));
   },
 }));

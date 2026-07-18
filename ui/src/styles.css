@@ -618,12 +618,40 @@ button:disabled {
 .transcript-error {
   width: min(100%, 820px);
   margin: 4px auto 12px;
-  padding: 9px 12px;
+  padding: 10px 12px;
   border: 1px solid rgba(226, 109, 114, 0.3);
   border-radius: 7px;
   color: #dca8aa;
   background: rgba(226, 109, 114, 0.08);
   font-size: 11px;
+}
+
+.transcript-error__copy {
+  line-height: 1.45;
+}
+
+.transcript-error__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.transcript-error__actions button {
+  appearance: none;
+  border: 1px solid rgba(220, 168, 170, 0.35);
+  border-radius: 6px;
+  background: rgba(15, 17, 21, 0.35);
+  color: #f0d0d2;
+  font: inherit;
+  font-size: 11px;
+  padding: 5px 10px;
+  cursor: pointer;
+}
+
+.transcript-error__actions button:disabled {
+  opacity: 0.55;
+  cursor: default;
 }
 
 .transcript-empty {
