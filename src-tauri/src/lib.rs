@@ -1,5 +1,6 @@
 mod error;
 mod rpc;
+mod session;
 mod settings;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
