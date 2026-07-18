@@ -57,9 +57,6 @@ cd src-tauri && cargo test
 - **React UI** (`ui/`): Zen shell, transcript/composer, pinnable panels, palette, xterm terminal view.
 - **OMP** remains source of truth for agent loop, tools, session files, and auth.
 
-Design spec: `docs/superpowers/specs/2026-07-19-omp-desktop-design.md`  
-Implementation plan: `docs/superpowers/plans/2026-07-19-omp-desktop.md`
-
 ## Defaults
 
 - Approval mode: **yolo** (`--approval-mode yolo` + `--auto-approve`) unless changed in Settings.
