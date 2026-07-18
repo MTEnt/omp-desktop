@@ -55,3 +55,17 @@ export interface TodoPhase {
   name: string;
   tasks: TodoTask[];
 }
+
+export interface ModelRoleAssignment {
+  role: string;
+  selector: string;
+  provider?: string | null;
+  modelId?: string | null;
+  thinking?: string | null;
+  shortLabel: string;
+}
+
+export interface ModelRolesSnapshot {
+  configPath?: string | null;
+  roles: ModelRoleAssignment[];
+}

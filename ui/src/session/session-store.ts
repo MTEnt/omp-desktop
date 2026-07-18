@@ -5,6 +5,7 @@ import { api } from "../lib/tauri.ts";
 import type {
   ActivityItem,
   AppSettings,
+  ModelRoleAssignment,
   SessionInfo,
   SubagentInfo,
   TodoPhase,
@@ -15,7 +16,10 @@ type OmpEvent = Record<string, unknown>;
 
 export interface SessionStore {
   settings: AppSettings | null;
+  modelRoles: ModelRoleAssignment[];
+  modelRolesConfigPath: string | null;
   loadSettings: () => Promise<void>;
+  loadModelRoles: () => Promise<void>;
   saveSettings: (settings: AppSettings) => Promise<boolean>;
   sessions: SessionInfo[];
   activeSessionId: string | null;
@@ -90,9 +94,20 @@ const asRecord = (value: unknown): OmpEvent | null =>
 
 export interface SessionRuntimeStatus {
   model: string | null;
+  modelId: string | null;
+  provider: string | null;
   thinkingLevel: string | null;
   contextPercent: number | null;
 }
+
+const formatModelLabel = (
+  provider: string | null,
+  modelId: string | null,
+  fallback: string | null,
+): string | null => {
+  if (provider && modelId) return `${provider}/${modelId}`;
+  return modelId ?? fallback;
+};
 
 export const readSessionRuntimeStatus = (
   snapshot: unknown,
@@ -100,9 +115,18 @@ export const readSessionRuntimeStatus = (
   const envelope = asRecord(snapshot);
   const state = asRecord(envelope?.data) ?? envelope;
   const contextUsage = asRecord(state?.contextUsage);
+  const modelValue = state?.model;
+  const modelRecord = asRecord(modelValue);
+  const modelId =
+    (modelRecord ? readString(modelRecord, "id", "modelId", "name") : undefined) ??
+    (typeof modelValue === "string" ? modelValue : null);
+  const provider =
+    (modelRecord ? readString(modelRecord, "provider") : undefined) ?? null;
 
   return {
-    model: typeof state?.model === "string" ? state.model : null,
+    model: formatModelLabel(provider, modelId, typeof modelValue === "string" ? modelValue : null),
+    modelId,
+    provider,
     thinkingLevel:
       typeof state?.thinkingLevel === "string" ? state.thinkingLevel : null,
     contextPercent:
@@ -112,6 +136,13 @@ export const readSessionRuntimeStatus = (
         : null,
   };
 };
+
+export const PRIMARY_MODEL_ROLES = [
+  "default",
+  "smol",
+  "slow",
+  "plan",
+] as const;
 
 const readString = (
   value: Record<string, unknown>,
@@ -264,6 +295,8 @@ const toolIdentity = (
 
 export const useSessionStore = create<SessionStore>()((set, get) => ({
   settings: null,
+  modelRoles: [],
+  modelRolesConfigPath: null,
   sessions: [],
   activeSessionId: null,
   transcripts: {},
@@ -275,6 +308,7 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
   streaming: {},
 
   bootstrap: async () => {
+    void get().loadModelRoles();
     try {
       const [settings, sessions] = await Promise.all([
         api.getSettings(),
@@ -300,6 +334,20 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
       set({ settings, error: null });
     } catch (error) {
       set({ error: `Unable to load settings: ${errorMessage(error)}` });
+    }
+  },
+
+  loadModelRoles: async () => {
+    try {
+      const snapshot = await api.getModelRoles();
+      set({
+        modelRoles: snapshot.roles ?? [],
+        modelRolesConfigPath: snapshot.configPath ?? null,
+      });
+    } catch (error) {
+      // Roles are supplemental chrome; don't block the app.
+      console.warn("Unable to load model roles", error);
+      set({ modelRoles: [], modelRolesConfigPath: null });
     }
   },
 

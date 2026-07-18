@@ -1,9 +1,11 @@
 import { invoke } from "@tauri-apps/api/core";
 
-import type { AppSettings, SessionInfo } from "../session/types.ts";
+import type { AppSettings, ModelRolesSnapshot, SessionInfo } from "../session/types.ts";
 
 export const api = {
   getSettings: () => invoke<AppSettings>("get_settings"),
+
+  getModelRoles: () => invoke<ModelRolesSnapshot>("get_model_roles"),
 
   saveSettings: (settings: AppSettings) =>
     invoke<void>("save_settings", { settings }),
