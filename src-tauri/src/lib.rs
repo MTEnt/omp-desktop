@@ -4,6 +4,7 @@ mod error;
 mod pty;
 mod rpc;
 mod session;
+mod session_history;
 mod settings;
 
 use tauri::Manager;
@@ -42,6 +43,7 @@ pub fn run() {
             commands::abort,
             commands::get_state,
             commands::rpc_command,
+            commands::rewrite_assistant_message,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

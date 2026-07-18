@@ -59,17 +59,23 @@ const AssistantEntry = ({
   const updateAssistantText = useSessionStore((state) => state.updateAssistantText);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(item.text);
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     if (!editing) setDraft(item.text);
   }, [item.text, editing]);
 
-  const canEdit = Boolean(sessionId) && !streaming;
+  const canEdit = Boolean(sessionId) && !streaming && !saving;
 
-  const save = () => {
+  const save = async () => {
     if (!sessionId) return;
-    updateAssistantText(sessionId, item.id, draft);
-    setEditing(false);
+    setSaving(true);
+    try {
+      const ok = await updateAssistantText(sessionId, item.id, draft);
+      if (ok) setEditing(false);
+    } finally {
+      setSaving(false);
+    }
   };
 
   const cancel = () => {
@@ -106,10 +112,15 @@ const AssistantEntry = ({
             aria-label="Edit assistant response"
           />
           <div className="assistant-edit__actions">
-            <button type="button" className="primary" onClick={save}>
-              Save
+            <button
+              type="button"
+              className="primary"
+              disabled={saving}
+              onClick={() => void save()}
+            >
+              {saving ? "Saving…" : "Save to history"}
             </button>
-            <button type="button" onClick={cancel}>
+            <button type="button" disabled={saving} onClick={cancel}>
               Cancel
             </button>
           </div>

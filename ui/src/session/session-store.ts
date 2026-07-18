@@ -45,7 +45,7 @@ export interface SessionStore {
   send: (message: string, streamingBehavior?: string) => Promise<boolean>;
   abort: () => Promise<void>;
   applyOmpEvent: (sessionId: string, event: unknown) => void;
-  updateAssistantText: (sessionId: string, itemId: string, text: string) => void;
+  updateAssistantText: (sessionId: string, itemId: string, text: string) => Promise<boolean>;
   markExited: (sessionId: string) => void;
   clearError: () => void;
 }
@@ -609,8 +609,67 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
       return;
     }
 
+    if (type === "message_end") {
+      const message = asRecord(event.message);
+      if (message?.role !== "assistant") return;
+      const responseId = readString(message, "responseId");
+      const content = message.content;
+      let text = "";
+      let thinking = "";
+      if (Array.isArray(content)) {
+        for (const block of content) {
+          const entry = asRecord(block);
+          if (!entry) continue;
+          if (entry.type === "text" && typeof entry.text === "string") {
+            text += entry.text;
+          }
+          if (entry.type === "thinking" && typeof entry.thinking === "string") {
+            thinking += entry.thinking;
+          }
+        }
+      }
+      set((state) => {
+        const current = state.transcripts[sessionId] ?? [];
+        const last = current.at(-1);
+        if (last?.kind === "assistant") {
+          return {
+            transcripts: {
+              ...state.transcripts,
+              [sessionId]: [
+                ...current.slice(0, -1),
+                {
+                  ...last,
+                  id: responseId ?? last.id,
+                  responseId: responseId ?? last.responseId,
+                  text: text || last.text,
+                  thinking: thinking || last.thinking,
+                },
+              ],
+            },
+          };
+        }
+        return {
+          transcripts: {
+            ...state.transcripts,
+            [sessionId]: [
+              ...current,
+              {
+                id: responseId ?? nextItemId(current, "assistant"),
+                kind: "assistant",
+                text,
+                thinking: thinking || undefined,
+                responseId: responseId,
+              },
+            ],
+          },
+        };
+      });
+      return;
+    }
+
     if (type === "message_update") {
       const assistantEvent = asRecord(event.assistantMessageEvent);
+      const message = asRecord(event.message);
       const delta = assistantEvent
         ? readString(assistantEvent, "delta", "text", "thinking")
         : readString(event, "delta", "text", "thinking");
@@ -623,23 +682,37 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
         eventType === "thinking" ||
         eventType === "reasoning_delta";
       if ((!isText && !isThinking) || delta === undefined) return;
+      const responseId = message ? readString(message, "responseId") : undefined;
 
       set((state) => {
         const current = state.transcripts[sessionId] ?? [];
         const messageId =
+          responseId ??
           (assistantEvent
             ? readString(assistantEvent, "messageId")
-            : undefined) ?? readString(event, "messageId");
+            : undefined) ??
+          readString(event, "messageId");
         const last = current.at(-1);
         const canMerge =
           last?.kind === "assistant" &&
-          (messageId === undefined || messageId === last.id);
+          (messageId === undefined ||
+            messageId === last.id ||
+            messageId === last.responseId);
 
         if (canMerge && last?.kind === "assistant") {
-          const nextItem =
-            isThinking
-              ? { ...last, thinking: `${last.thinking ?? ""}${delta}` }
-              : { ...last, text: `${last.text}${delta}` };
+          const nextItem = isThinking
+            ? {
+                ...last,
+                thinking: `${last.thinking ?? ""}${delta}`,
+                responseId: responseId ?? last.responseId,
+                id: responseId ?? last.id,
+              }
+            : {
+                ...last,
+                text: `${last.text}${delta}`,
+                responseId: responseId ?? last.responseId,
+                id: responseId ?? last.id,
+              };
           return {
             transcripts: {
               ...state.transcripts,
@@ -658,6 +731,7 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
                 kind: "assistant",
                 text: isText ? delta : "",
                 thinking: isThinking ? delta : undefined,
+                responseId,
               },
             ],
           },
@@ -732,21 +806,51 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
     });
   },
 
-  updateAssistantText: (sessionId, itemId, text) => {
-    set((state) => {
-      const current = state.transcripts[sessionId];
-      if (!current) return state;
-      let changed = false;
-      const next = current.map((item) => {
-        if (item.kind !== "assistant" || item.id !== itemId) return item;
-        changed = true;
-        return { ...item, text };
-      });
-      if (!changed) return state;
-      return {
-        transcripts: { ...state.transcripts, [sessionId]: next },
-      };
-    });
+  updateAssistantText: async (sessionId, itemId, text) => {
+    const current = get().transcripts[sessionId] ?? [];
+    const target = current.find(
+      (item) => item.kind === "assistant" && item.id === itemId,
+    );
+    if (!target || target.kind !== "assistant") {
+      set({ error: "Assistant message not found in transcript." });
+      return false;
+    }
+
+    // Optimistic local update
+    set((state) => ({
+      transcripts: {
+        ...state.transcripts,
+        [sessionId]: (state.transcripts[sessionId] ?? []).map((item) =>
+          item.kind === "assistant" && item.id === itemId
+            ? { ...item, text }
+            : item,
+        ),
+      },
+      error: null,
+    }));
+
+    try {
+      await api.rewriteAssistantMessage(
+        sessionId,
+        text,
+        target.responseId ?? null,
+      );
+      return true;
+    } catch (error) {
+      // Roll back local text on failure
+      set((state) => ({
+        transcripts: {
+          ...state.transcripts,
+          [sessionId]: (state.transcripts[sessionId] ?? []).map((item) =>
+            item.kind === "assistant" && item.id === itemId
+              ? { ...item, text: target.text }
+              : item,
+          ),
+        },
+        error: `Unable to rewrite session history: ${errorMessage(error)}`,
+      }));
+      return false;
+    }
   },
 
   markExited: (sessionId) => {

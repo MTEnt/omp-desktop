@@ -56,4 +56,14 @@ export const api = {
     command: string,
     params: Record<string, unknown> = {},
   ) => invoke<unknown>("rpc_command", { sessionId, command, params }),
+
+  rewriteAssistantMessage: (
+    sessionId: string,
+    text: string,
+    responseId?: string | null,
+  ) =>
+    invoke<{ sessionFile: string; entryId: string; responseId?: string | null }>(
+      "rewrite_assistant_message",
+      { sessionId, text, responseId: responseId ?? null },
+    ),
 };
