@@ -129,8 +129,10 @@ impl SessionManager {
         self.tabs.values().map(|tab| tab.info.clone()).collect()
     }
 
-    pub fn events_mut(&mut self, session_id: &str) -> Option<&mut UnboundedReceiver<Value>> {
-        self.tabs.get_mut(session_id).map(|tab| &mut tab.rpc.events)
+    pub fn take_events(&mut self, session_id: &str) -> Option<UnboundedReceiver<Value>> {
+        self.tabs
+            .get_mut(session_id)
+            .and_then(|tab| tab.rpc.take_events())
     }
 
     pub fn set_settings(&mut self, settings: AppSettings) {
@@ -314,13 +316,12 @@ input.on("line", (line) => {
         assert_eq!(info.status, SessionStatus::Ready);
         assert_eq!(manager.list(), vec![info.clone()]);
 
-        let ready = timeout(
-            Duration::from_secs(2),
-            manager.events_mut(&info.id).unwrap().recv(),
-        )
-        .await
-        .unwrap()
-        .unwrap();
+        let mut events = manager.take_events(&info.id).expect("event receiver");
+        assert!(manager.take_events(&info.id).is_none());
+        let ready = timeout(Duration::from_secs(2), events.recv())
+            .await
+            .unwrap()
+            .unwrap();
         let argv = ready["argv"].as_array().unwrap();
         assert!(argv.windows(2).any(|args| args == ["--profile", "work"]));
         assert!(argv
@@ -348,7 +349,7 @@ input.on("line", (line) => {
 
         manager.close(&info.id).await.unwrap();
         assert!(manager.list().is_empty());
-        assert!(manager.events_mut(&info.id).is_none());
+        assert!(manager.take_events(&info.id).is_none());
         assert!(manager.get_state(&info.id).await.is_err());
 
         fs::remove_dir_all(root).unwrap();

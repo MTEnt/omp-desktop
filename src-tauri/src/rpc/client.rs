@@ -22,7 +22,7 @@ pub struct RpcClient {
     next_id: AtomicU64,
     pending: PendingRequests,
     ready: watch::Receiver<bool>,
-    pub events: mpsc::UnboundedReceiver<Value>,
+    events: Option<mpsc::UnboundedReceiver<Value>>,
 }
 
 impl RpcClient {
@@ -99,8 +99,12 @@ impl RpcClient {
             next_id: AtomicU64::new(0),
             pending,
             ready,
-            events,
+            events: Some(events),
         })
+    }
+
+    pub fn take_events(&mut self) -> Option<mpsc::UnboundedReceiver<Value>> {
+        self.events.take()
     }
 
     pub async fn wait_ready(&self, wait_timeout: Duration) -> AppResult<()> {
@@ -286,6 +290,8 @@ setInterval(() => {}, 1000);
     async fn forwards_non_response_frames_as_events() {
         let mut client = spawn_mock().await;
         client.wait_ready(Duration::from_secs(2)).await.unwrap();
+        let mut events = client.take_events().expect("event receiver");
+        assert!(client.take_events().is_none());
         client
             .request("prompt", json!({ "message": "echo-event" }))
             .await
@@ -293,7 +299,7 @@ setInterval(() => {}, 1000);
 
         let event = timeout(Duration::from_secs(2), async {
             loop {
-                let frame = client.events.recv().await.expect("event channel closed");
+                let frame = events.recv().await.expect("event channel closed");
                 if frame_type(&frame) == Some("message_update") {
                     break frame;
                 }
