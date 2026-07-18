@@ -3,6 +3,7 @@ import { beforeEach, describe, it } from "node:test";
 
 import { useLayoutStore } from "../src/app/layout-store.ts";
 import {
+  readSessionRuntimeStatus,
   selectActiveTranscript,
   useSessionStore,
 } from "../src/session/session-store.ts";
@@ -46,6 +47,40 @@ describe("layout store", () => {
     assert.deepEqual(useLayoutStore.getState().pinned, ["plan"]);
     store.togglePin("plan");
     assert.deepEqual(useLayoutStore.getState().pinned, []);
+  });
+});
+
+describe("session runtime status", () => {
+  it("reads model, thinking, and context percent from a get_state envelope", () => {
+    assert.deepEqual(
+      readSessionRuntimeStatus({
+        type: "response",
+        success: true,
+        data: {
+          model: "claude-sonnet-4",
+          thinkingLevel: "high",
+          contextUsage: { percent: 42.4 },
+        },
+      }),
+      {
+        model: "claude-sonnet-4",
+        thinkingLevel: "high",
+        contextPercent: 42.4,
+      },
+    );
+  });
+
+  it("falls back to placeholders for missing or malformed runtime details", () => {
+    assert.deepEqual(readSessionRuntimeStatus({ data: { contextUsage: {} } }), {
+      model: null,
+      thinkingLevel: null,
+      contextPercent: null,
+    });
+    assert.deepEqual(readSessionRuntimeStatus(null), {
+      model: null,
+      thinkingLevel: null,
+      contextPercent: null,
+    });
   });
 });
 

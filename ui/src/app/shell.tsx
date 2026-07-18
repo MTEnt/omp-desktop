@@ -1,6 +1,11 @@
+import { useEffect, useMemo, useState } from "react";
+
 import { useLayoutStore, type PanelId } from "./layout-store.ts";
 import { LeftRail, RightRail, type RailTarget } from "./rails.tsx";
-import { useSessionStore } from "../session/session-store.ts";
+import {
+  readSessionRuntimeStatus,
+  useSessionStore,
+} from "../session/session-store.ts";
 import { Composer } from "../session/composer.tsx";
 import { Transcript } from "../session/transcript.tsx";
 import { ActivityPanel } from "../panels/activity-panel.tsx";
@@ -10,6 +15,7 @@ import { SessionsPanel } from "../panels/sessions-panel.tsx";
 import { SettingsPanel } from "../panels/settings-panel.tsx";
 import { SubagentsPanel } from "../panels/subagents-panel.tsx";
 import { TerminalPanel } from "../panels/terminal-panel.tsx";
+import { CommandPalette } from "./palette.tsx";
 
 const panelMeta: Record<PanelId, { label: string; eyebrow: string }> = {
   sessions: { label: "Sessions", eyebrow: "Workspace" },
@@ -153,12 +159,43 @@ export const Shell = () => {
   const closeDrawer = useLayoutStore((state) => state.closeDrawer);
   const toggleDrawer = useLayoutStore((state) => state.toggleDrawer);
   const togglePin = useLayoutStore((state) => state.togglePin);
-  const settings = useSessionStore((state) => state.settings);
+  const activeSessionId = useSessionStore((state) => state.activeSessionId);
+  const runtimeSnapshot = useSessionStore((state) =>
+    state.activeSessionId ? state.states[state.activeSessionId] : undefined,
+  );
+  const refreshState = useSessionStore((state) => state.refreshState);
   const openFolder = useSessionStore((state) => state.openFolder);
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const runtimeStatus = useMemo(
+    () => readSessionRuntimeStatus(runtimeSnapshot),
+    [runtimeSnapshot],
+  );
   const activeTargets: RailTarget[] = [
     ...(drawer ? [drawer] : ["chat" as const]),
     ...pinned,
   ];
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
+        if (event.repeat) return;
+        event.preventDefault();
+        setPaletteOpen((current) => !current);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
+
+  useEffect(() => {
+    if (!activeSessionId) return;
+    void refreshState(activeSessionId);
+    const refreshTimer = window.setInterval(
+      () => void refreshState(activeSessionId),
+      20_000,
+    );
+    return () => window.clearInterval(refreshTimer);
+  }, [activeSessionId, refreshState]);
 
   const selectRail = (target: RailTarget) => {
     if (target === "chat") {
@@ -185,10 +222,25 @@ export const Shell = () => {
           <span>OMP Desktop</span>
         </div>
         <SessionTabs />
-        <div className="runtime-strip" aria-label="Runtime details">
-          <span>{settings?.defaultModel ?? "model —"}</span>
-          <span>{settings?.defaultThinking ?? "thinking —"}</span>
-          <span>ctx —</span>
+        <div className="runtime-strip" aria-label="Active session status">
+          <span title={runtimeStatus.model ?? "Model unavailable"}>
+            model {runtimeStatus.model ?? "—"}
+          </span>
+          <span title={runtimeStatus.thinkingLevel ?? "Thinking level unavailable"}>
+            thinking {runtimeStatus.thinkingLevel ?? "—"}
+          </span>
+          <span
+            title={
+              runtimeStatus.contextPercent === null
+                ? "Context usage unavailable"
+                : `${runtimeStatus.contextPercent}% context used`
+            }
+          >
+            ctx{" "}
+            {runtimeStatus.contextPercent === null
+              ? "—"
+              : `${Math.round(runtimeStatus.contextPercent)}%`}
+          </span>
           <button
             className="topbar-open-folder"
             type="button"
@@ -196,7 +248,13 @@ export const Shell = () => {
           >
             Open folder
           </button>
-          <button type="button" title="Command palette · ⌘K" disabled>
+          <button
+            type="button"
+            title="Command palette · ⌘K"
+            aria-label="Open command palette"
+            aria-keyshortcuts="Meta+K Control+K"
+            onClick={() => setPaletteOpen(true)}
+          >
             <kbd>⌘K</kbd>
           </button>
         </div>
@@ -257,6 +315,7 @@ export const Shell = () => {
 
         <RightRail active={activeTargets} onSelect={selectRail} />
       </div>
+      <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} />
     </div>
   );
 };
