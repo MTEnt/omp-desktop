@@ -6,6 +6,7 @@ import type {
   ActivityItem,
   AppSettings,
   SessionInfo,
+  SubagentInfo,
   TodoPhase,
   TranscriptItem,
 } from "./types.ts";
@@ -14,19 +15,23 @@ type OmpEvent = Record<string, unknown>;
 
 export interface SessionStore {
   settings: AppSettings | null;
+  loadSettings: () => Promise<void>;
+  saveSettings: (settings: AppSettings) => Promise<boolean>;
   sessions: SessionInfo[];
   activeSessionId: string | null;
   transcripts: Record<string, TranscriptItem[]>;
   activity: Record<string, ActivityItem[]>;
   todos: Record<string, TodoPhase[]>;
-  subagents: Record<string, unknown[]>;
+  subagents: Record<string, SubagentInfo[]>;
   states: Record<string, unknown>;
   error: string | null;
   streaming: Record<string, boolean>;
   bootstrap: () => Promise<void>;
   setActive: (sessionId: string | null) => void;
-  openFolder: (cwd?: string) => Promise<void>;
+  openFolder: (cwd?: string, resume?: string) => Promise<void>;
   closeSession: (sessionId: string) => Promise<void>;
+  refreshState: (sessionId: string) => Promise<void>;
+  loadSubagents: (sessionId: string) => Promise<void>;
   send: (message: string, streamingBehavior?: string) => Promise<boolean>;
   abort: () => Promise<void>;
   applyOmpEvent: (sessionId: string, event: unknown) => void;
@@ -57,6 +62,65 @@ const readString = (
     if (typeof candidate === "string") return candidate;
   }
   return undefined;
+};
+
+const normalizeTodoPhases = (snapshot: unknown): TodoPhase[] => {
+  const envelope = asRecord(snapshot);
+  const value = (asRecord(envelope?.data) ?? envelope)?.todoPhases;
+  if (!Array.isArray(value)) return [];
+
+  const phases: TodoPhase[] = [];
+  for (const [phaseIndex, candidate] of value.entries()) {
+    const phase = asRecord(candidate);
+    if (!phase || !Array.isArray(phase.tasks)) continue;
+
+    const tasks: TodoPhase["tasks"] = [];
+    for (const [taskIndex, taskCandidate] of phase.tasks.entries()) {
+      const task = asRecord(taskCandidate);
+      if (!task) continue;
+      const content = readString(task, "content");
+      if (!content) continue;
+      tasks.push({
+        id: readString(task, "id") ?? `task-${phaseIndex + 1}-${taskIndex + 1}`,
+        content,
+        status: readString(task, "status") ?? "pending",
+      });
+    }
+
+    phases.push({
+      id: readString(phase, "id") ?? `phase-${phaseIndex + 1}`,
+      name: readString(phase, "name") ?? `Phase ${phaseIndex + 1}`,
+      tasks,
+    });
+  }
+  return phases;
+};
+
+const normalizeSubagents = (response: unknown): SubagentInfo[] => {
+  const envelope = asRecord(response);
+  const payload = envelope?.data ?? response;
+  const value = asRecord(payload)?.subagents ?? payload;
+  if (!Array.isArray(value)) return [];
+  const subagents: SubagentInfo[] = [];
+  for (const [index, candidate] of value.entries()) {
+    const subagent = asRecord(candidate);
+    if (!subagent) continue;
+    const id =
+      readString(subagent, "id", "agentId", "sessionId") ??
+      `subagent-${index + 1}`;
+    const progressValue = subagent.progress;
+    const progress =
+      typeof progressValue === "string" || typeof progressValue === "number"
+        ? String(progressValue)
+        : readString(subagent, "task", "currentTask");
+    subagents.push({
+      id,
+      name: readString(subagent, "name", "label") ?? id,
+      status: readString(subagent, "status", "state") ?? "unknown",
+      ...(progress ? { progress } : {}),
+    });
+  }
+  return subagents;
 };
 
 const formatDetail = (value: unknown): string => {
@@ -156,9 +220,29 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
     }
   },
 
+  loadSettings: async () => {
+    try {
+      const settings = await api.getSettings();
+      set({ settings, error: null });
+    } catch (error) {
+      set({ error: `Unable to load settings: ${errorMessage(error)}` });
+    }
+  },
+
+  saveSettings: async (settings) => {
+    try {
+      await api.saveSettings(settings);
+      set({ settings, error: null });
+      return true;
+    } catch (error) {
+      set({ error: `Unable to save settings: ${errorMessage(error)}` });
+      return false;
+    }
+  },
+
   setActive: (sessionId) => set({ activeSessionId: sessionId }),
 
-  openFolder: async (cwd) => {
+  openFolder: async (cwd, resume) => {
     try {
       const selectedCwd =
         cwd ??
@@ -169,7 +253,7 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
         }));
       if (!selectedCwd) return;
 
-      const session = await api.createSession(selectedCwd);
+      const session = await api.createSession(selectedCwd, resume);
       set((state) => ({
         sessions: [
           ...state.sessions.filter((candidate) => candidate.id !== session.id),
@@ -225,6 +309,44 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
     } catch (error) {
       if (!isAlreadyClosedError(error)) {
         set({ error: `Unable to close session: ${errorMessage(error)}` });
+      }
+    }
+  },
+
+  refreshState: async (sessionId) => {
+    try {
+      const snapshot = await api.getState(sessionId);
+      if (!get().sessions.some((session) => session.id === sessionId)) return;
+      set((state) => ({
+        states: { ...state.states, [sessionId]: snapshot },
+        todos: {
+          ...state.todos,
+          [sessionId]: normalizeTodoPhases(snapshot),
+        },
+      }));
+    } catch (error) {
+      if (get().sessions.some((session) => session.id === sessionId)) {
+        set({ error: `Unable to refresh session: ${errorMessage(error)}` });
+      }
+    }
+  },
+
+  loadSubagents: async (sessionId) => {
+    try {
+      await api.rpcCommand(sessionId, "set_subagent_subscription", {
+        level: "progress",
+      });
+      const response = await api.rpcCommand(sessionId, "get_subagents");
+      if (!get().sessions.some((session) => session.id === sessionId)) return;
+      set((state) => ({
+        subagents: {
+          ...state.subagents,
+          [sessionId]: normalizeSubagents(response),
+        },
+      }));
+    } catch (error) {
+      if (get().sessions.some((session) => session.id === sessionId)) {
+        set({ error: `Unable to load subagents: ${errorMessage(error)}` });
       }
     }
   },
@@ -309,6 +431,7 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
           [sessionId]: type === "agent_start",
         },
       }));
+      if (type === "agent_end") void get().refreshState(sessionId);
       return;
     }
 

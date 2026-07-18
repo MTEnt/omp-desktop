@@ -138,6 +138,160 @@ describe("session commands", () => {
     assert.equal(state.streaming["session-2"], false);
   });
 
+  it("passes a resume id or path when creating a session", async () => {
+    const originalCreateSession = api.createSession;
+    const requests: Array<{ cwd: string; resume?: string }> = [];
+    api.createSession = async (cwd, resume) => {
+      requests.push({ cwd, resume });
+      return {
+        id: "session-resumed",
+        title: "resumed-project",
+        cwd,
+        profile: null,
+        status: "ready",
+      };
+    };
+
+    try {
+      await useSessionStore
+        .getState()
+        .openFolder("/tmp/resumed-project", "session-history.jsonl");
+    } finally {
+      api.createSession = originalCreateSession;
+    }
+
+    assert.deepEqual(requests, [
+      {
+        cwd: "/tmp/resumed-project",
+        resume: "session-history.jsonl",
+      },
+    ]);
+  });
+
+  it("maps get_state todo phases into the active session plan", async () => {
+    const originalGetState = api.getState;
+    api.getState = async () => ({
+      type: "response",
+      success: true,
+      data: {
+        todoPhases: [
+          {
+            id: "phase-1",
+            name: "Build",
+            tasks: [
+              { id: "task-1", content: "Wire panels", status: "in_progress" },
+            ],
+          },
+        ],
+      },
+    });
+    try {
+      await useSessionStore.getState().refreshState("session-1");
+    } finally {
+      api.getState = originalGetState;
+    }
+
+    assert.deepEqual(useSessionStore.getState().todos["session-1"], [
+      {
+        id: "phase-1",
+        name: "Build",
+        tasks: [
+          { id: "task-1", content: "Wire panels", status: "in_progress" },
+        ],
+      },
+    ]);
+  });
+
+  it("refreshes state after an agent run ends", async () => {
+    const originalGetState = api.getState;
+    let refreshes = 0;
+    api.getState = async () => {
+      refreshes += 1;
+      return { todoPhases: [] };
+    };
+
+    try {
+      useSessionStore
+        .getState()
+        .applyOmpEvent("session-1", { type: "agent_end" });
+      await Promise.resolve();
+      await Promise.resolve();
+    } finally {
+      api.getState = originalGetState;
+    }
+
+    assert.equal(refreshes, 1);
+  });
+
+  it("subscribes to progress before loading subagents", async () => {
+    const originalRpcCommand = api.rpcCommand;
+    const commands: string[] = [];
+    api.rpcCommand = async (_sessionId, command) => {
+      commands.push(command);
+      return command === "get_subagents"
+        ? {
+            type: "response",
+            success: true,
+            data: {
+              subagents: [
+                {
+                  id: "agent-1",
+                  name: "Explorer",
+                  status: "running",
+                  progress: "Tracing state",
+                },
+              ],
+            },
+          }
+        : {};
+    };
+
+    try {
+      await useSessionStore.getState().loadSubagents("session-1");
+    } finally {
+      api.rpcCommand = originalRpcCommand;
+    }
+
+    assert.deepEqual(commands, [
+      "set_subagent_subscription",
+      "get_subagents",
+    ]);
+    assert.deepEqual(useSessionStore.getState().subagents["session-1"], [
+      {
+        id: "agent-1",
+        name: "Explorer",
+        status: "running",
+        progress: "Tracing state",
+      },
+    ]);
+  });
+
+  it("saves settings and keeps the live store in sync", async () => {
+    const originalSaveSettings = api.saveSettings;
+    const saved: unknown[] = [];
+    api.saveSettings = async (settings) => {
+      saved.push(settings);
+    };
+    const settings = {
+      approvalMode: "write" as const,
+      ompBinary: "/usr/local/bin/omp",
+      defaultModel: "opus",
+      defaultThinking: "high",
+      defaultProfile: "work",
+      theme: "dark",
+    };
+
+    try {
+      const didSave = await useSessionStore.getState().saveSettings(settings);
+      assert.equal(didSave, true);
+    } finally {
+      api.saveSettings = originalSaveSettings;
+    }
+
+    assert.deepEqual(saved, [settings]);
+    assert.deepEqual(useSessionStore.getState().settings, settings);
+  });
+
   it("selects only the active session transcript", () => {
     useSessionStore.setState((state) => ({
       sessions: [
