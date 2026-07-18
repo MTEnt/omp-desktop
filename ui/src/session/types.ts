@@ -69,3 +69,12 @@ export interface ModelRolesSnapshot {
   configPath?: string | null;
   roles: ModelRoleAssignment[];
 }
+
+export interface AvailableModel {
+  provider: string;
+  id: string;
+  name: string;
+  selector: string;
+  reasoning: boolean;
+  thinkingEfforts: string[];
+}

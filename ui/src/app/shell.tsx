@@ -3,7 +3,6 @@ import { useEffect, useMemo, useState } from "react";
 import { useLayoutStore, type PanelId } from "./layout-store.ts";
 import { LeftRail, RightRail, type RailTarget } from "./rails.tsx";
 import {
-  PRIMARY_MODEL_ROLES,
   readSessionRuntimeStatus,
   selectActiveRuntimeSnapshot,
   useSessionStore,
@@ -19,6 +18,7 @@ import { SubagentsPanel } from "../panels/subagents-panel.tsx";
 import { TerminalPanel } from "../panels/terminal-panel.tsx";
 import { CommandPalette } from "./palette.tsx";
 import { PixelPieLogo } from "./pixel-pie-logo.tsx";
+import { RoleModelStrip } from "./role-model-picker.tsx";
 
 const panelMeta: Record<PanelId, { label: string; eyebrow: string }> = {
   sessions: { label: "Sessions", eyebrow: "Workspace" },
@@ -33,29 +33,41 @@ const panelMeta: Record<PanelId, { label: string; eyebrow: string }> = {
 const rightPanels: PanelId[] = ["plan", "activity", "subagents"];
 
 
-const SessionTabs = () => {
+const SessionSidebar = () => {
   const sessions = useSessionStore((state) => state.sessions);
   const activeSessionId = useSessionStore((state) => state.activeSessionId);
   const streaming = useSessionStore((state) => state.streaming);
   const setActive = useSessionStore((state) => state.setActive);
   const closeSession = useSessionStore((state) => state.closeSession);
 
+  const openFolder = useSessionStore((state) => state.openFolder);
+
   return (
-    <nav className="session-tabs" aria-label="Session tabs">
+    <aside className="session-sidebar" aria-label="Sessions">
+      <div className="session-sidebar__header">
+        <span>Sessions</span>
+        <button
+          type="button"
+          className="session-sidebar__new"
+          onClick={() => void openFolder()}
+          title="Open folder"
+        >
+          +
+        </button>
+      </div>
       {sessions.length > 0 ? (
-        <div className="session-tabs__scroll" role="tablist">
+        <div className="session-sidebar__list" role="tablist">
           {sessions.map((session) => {
             const isActive = session.id === activeSessionId;
             const isStreaming = streaming[session.id] === true;
-
             return (
               <div
-                className={`session-tab${isActive ? " is-active" : ""}`}
+                className={`session-side-item${isActive ? " is-active" : ""}`}
                 key={session.id}
               >
                 <button
                   type="button"
-                  className="session-tab__select"
+                  className="session-side-item__select"
                   role="tab"
                   aria-selected={isActive}
                   aria-controls="session-transcript"
@@ -64,32 +76,36 @@ const SessionTabs = () => {
                 >
                   {isStreaming && (
                     <span
-                      className="session-tab__streaming"
+                      className="session-side-item__streaming"
                       title="Streaming"
                       aria-label="Streaming"
                     />
                   )}
-                  <span className="session-tab__title">{session.title}</span>
+                  <span className="session-side-item__title">{session.title}</span>
+                  <span className="session-side-item__cwd">{session.cwd}</span>
                 </button>
                 <button
                   type="button"
-                  className="session-tab__close"
+                  className="session-side-item__close"
                   title={`Close ${session.title}`}
                   aria-label={`Close ${session.title}`}
                   onClick={() => void closeSession(session.id)}
                 >
-                  <svg viewBox="0 0 16 16" aria-hidden="true">
-                    <path d="m4 4 8 8M12 4 4 12" />
-                  </svg>
+                  ×
                 </button>
               </div>
             );
           })}
         </div>
       ) : (
-        <span className="session-tabs__empty">No active session</span>
+        <div className="session-sidebar__empty">
+          <p>No sessions yet.</p>
+          <button type="button" onClick={() => void openFolder()}>
+            Open folder
+          </button>
+        </div>
       )}
-    </nav>
+    </aside>
   );
 };
 
@@ -164,7 +180,6 @@ export const Shell = () => {
   const togglePin = useLayoutStore((state) => state.togglePin);
   const activeSessionId = useSessionStore((state) => state.activeSessionId);
   const runtimeSnapshot = useSessionStore(selectActiveRuntimeSnapshot);
-  const modelRoles = useSessionStore((state) => state.modelRoles);
   const refreshState = useSessionStore((state) => state.refreshState);
   const openFolder = useSessionStore((state) => state.openFolder);
   const [paletteOpen, setPaletteOpen] = useState(false);
@@ -172,12 +187,6 @@ export const Shell = () => {
     () => readSessionRuntimeStatus(runtimeSnapshot),
     [runtimeSnapshot],
   );
-  const primaryRoles = useMemo(() => {
-    const preferred = new Set<string>(PRIMARY_MODEL_ROLES);
-    const ranked = modelRoles.filter((role) => preferred.has(role.role));
-    const extras = modelRoles.filter((role) => !preferred.has(role.role));
-    return [...ranked, ...extras].slice(0, 6);
-  }, [modelRoles]);
   const activeTargets: RailTarget[] = [
     ...(drawer ? [drawer] : ["chat" as const]),
     ...pinned,
@@ -230,39 +239,8 @@ export const Shell = () => {
             <span className="brand__tag">Oh My Pi</span>
           </div>
         </div>
-        <SessionTabs />
         <div className="runtime-strip" aria-label="Active session status">
-          <div className="runtime-strip__roles" aria-label="OMP model roles">
-            {primaryRoles.length > 0 ? (
-              primaryRoles.map((role) => {
-                const isActive =
-                  role.role === "default" ||
-                  (runtimeStatus.modelId !== null &&
-                    (role.modelId === runtimeStatus.modelId ||
-                      role.selector.includes(runtimeStatus.modelId)));
-                return (
-                  <span
-                    className={`role-chip${isActive ? " is-active" : ""}`}
-                    key={role.role}
-                    title={`${role.role}: ${role.selector}`}
-                  >
-                    <span className="role-chip__role">{role.role}</span>
-                    <span className="role-chip__model">{role.shortLabel}</span>
-                  </span>
-                );
-              })
-            ) : (
-              <span
-                className="role-chip is-active"
-                title={runtimeStatus.model ?? "Active model unavailable"}
-              >
-                <span className="role-chip__role">active</span>
-                <span className="role-chip__model">
-                  {runtimeStatus.model ?? "—"}
-                </span>
-              </span>
-            )}
-          </div>
+          <RoleModelStrip />
           <span
             className="runtime-meta"
             title={runtimeStatus.thinkingLevel ?? "Thinking level unavailable"}
@@ -303,6 +281,7 @@ export const Shell = () => {
 
       <div className="shell-workspace">
         <LeftRail active={activeTargets} onSelect={selectRail} />
+        <SessionSidebar />
 
         <div className="stage">
           <main

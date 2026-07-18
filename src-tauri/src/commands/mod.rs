@@ -1,5 +1,5 @@
 use crate::error::AppError;
-use crate::omp_config::{self, ModelRolesSnapshot};
+use crate::omp_config::{self, AvailableModel, ModelRolesSnapshot};
 use crate::pty::{PtyManager, PtyOutput};
 use crate::session::{SessionInfo, SessionManager};
 use crate::settings::{self, AppSettings};
@@ -48,6 +48,41 @@ struct SessionEventEnvelope {
 #[tauri::command(rename_all = "camelCase")]
 pub async fn get_model_roles() -> Result<ModelRolesSnapshot, AppError> {
     omp_config::load_model_roles()
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub async fn set_model_role(
+    role: String,
+    selector: String,
+) -> Result<ModelRolesSnapshot, AppError> {
+    omp_config::set_model_role(&role, &selector)
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub async fn list_available_models(
+    state: State<'_, AppState>,
+) -> Result<Vec<AvailableModel>, AppError> {
+    use crate::rpc::RpcClient;
+    use crate::settings;
+    use serde_json::Map;
+    use tokio::time::Duration;
+
+    let settings = state.settings.lock().await.clone();
+    let omp_bin = settings::resolve_omp_binary(&settings).unwrap_or_else(|_| PathBuf::from("omp"));
+    let cwd = std::env::temp_dir();
+    let args = vec![
+        "--mode".into(),
+        "rpc".into(),
+        "--cwd".into(),
+        cwd.display().to_string(),
+        "--no-session".into(),
+    ];
+    let client = RpcClient::spawn(&omp_bin, &args).await?;
+    client.wait_ready(Duration::from_secs(30)).await?;
+    let response = client
+        .request("get_available_models", Value::Object(Map::new()))
+        .await?;
+    Ok(omp_config::parse_available_models_response(&response))
 }
 
 #[tauri::command(rename_all = "camelCase")]

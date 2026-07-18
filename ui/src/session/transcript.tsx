@@ -47,12 +47,90 @@ const ThinkingBlock = ({
   );
 };
 
+const AssistantEntry = ({
+  item,
+  streaming,
+  sessionId,
+}: {
+  item: Extract<TranscriptItem, { kind: "assistant" }>;
+  streaming?: boolean;
+  sessionId: string | null;
+}) => {
+  const updateAssistantText = useSessionStore((state) => state.updateAssistantText);
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(item.text);
+
+  useEffect(() => {
+    if (!editing) setDraft(item.text);
+  }, [item.text, editing]);
+
+  const canEdit = Boolean(sessionId) && !streaming;
+
+  const save = () => {
+    if (!sessionId) return;
+    updateAssistantText(sessionId, item.id, draft);
+    setEditing(false);
+  };
+
+  const cancel = () => {
+    setDraft(item.text);
+    setEditing(false);
+  };
+
+  return (
+    <article className="transcript-item transcript-item--assistant">
+      <header>
+        <span>OMP</span>
+        {canEdit ? (
+          <button
+            type="button"
+            className="assistant-edit-toggle"
+            onClick={() => setEditing((value) => !value)}
+          >
+            {editing ? "Close" : "Edit"}
+          </button>
+        ) : null}
+      </header>
+      {item.thinking ? (
+        <ThinkingBlock
+          thinking={item.thinking}
+          streaming={streaming && !item.text}
+        />
+      ) : null}
+      {editing ? (
+        <div className="assistant-edit">
+          <textarea
+            value={draft}
+            onChange={(event) => setDraft(event.target.value)}
+            spellCheck={false}
+            aria-label="Edit assistant response"
+          />
+          <div className="assistant-edit__actions">
+            <button type="button" className="primary" onClick={save}>
+              Save
+            </button>
+            <button type="button" onClick={cancel}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      ) : item.text ? (
+        <MarkdownBody content={item.text} className="md-body--assistant" />
+      ) : streaming && !item.thinking ? (
+        <p className="assistant-pending">OMP is responding…</p>
+      ) : null}
+    </article>
+  );
+};
+
 const TranscriptEntry = ({
   item,
   streaming,
+  sessionId,
 }: {
   item: TranscriptItem;
   streaming?: boolean;
+  sessionId: string | null;
 }) => {
   switch (item.kind) {
     case "user":
@@ -67,19 +145,7 @@ const TranscriptEntry = ({
 
     case "assistant":
       return (
-        <article className="transcript-item transcript-item--assistant">
-          <header>
-            <span>OMP</span>
-          </header>
-          {item.thinking ? (
-            <ThinkingBlock thinking={item.thinking} streaming={streaming && !item.text} />
-          ) : null}
-          {item.text ? (
-            <MarkdownBody content={item.text} className="md-body--assistant" />
-          ) : streaming && !item.thinking ? (
-            <p className="assistant-pending">OMP is responding…</p>
-          ) : null}
-        </article>
+        <AssistantEntry item={item} streaming={streaming} sessionId={sessionId} />
       );
 
     case "tool":
@@ -257,6 +323,7 @@ export const Transcript = () => {
             <TranscriptEntry
               item={item}
               key={`${item.kind}-${item.id}`}
+              sessionId={activeSessionId}
               streaming={
                 isStreaming &&
                 item.kind === "assistant" &&

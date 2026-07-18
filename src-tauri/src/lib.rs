@@ -28,6 +28,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::get_settings,
             commands::get_model_roles,
+            commands::list_available_models,
+            commands::set_model_role,
             commands::save_settings,
             commands::list_sessions,
             commands::create_session,
