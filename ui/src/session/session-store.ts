@@ -53,6 +53,31 @@ const isRecord = (value: unknown): value is OmpEvent =>
 const asRecord = (value: unknown): OmpEvent | null =>
   isRecord(value) ? value : null;
 
+export interface SessionRuntimeStatus {
+  model: string | null;
+  thinkingLevel: string | null;
+  contextPercent: number | null;
+}
+
+export const readSessionRuntimeStatus = (
+  snapshot: unknown,
+): SessionRuntimeStatus => {
+  const envelope = asRecord(snapshot);
+  const state = asRecord(envelope?.data) ?? envelope;
+  const contextUsage = asRecord(state?.contextUsage);
+
+  return {
+    model: typeof state?.model === "string" ? state.model : null,
+    thinkingLevel:
+      typeof state?.thinkingLevel === "string" ? state.thinkingLevel : null,
+    contextPercent:
+      typeof contextUsage?.percent === "number" &&
+      Number.isFinite(contextUsage.percent)
+        ? contextUsage.percent
+        : null,
+  };
+};
+
 const readString = (
   value: Record<string, unknown>,
   ...keys: string[]
