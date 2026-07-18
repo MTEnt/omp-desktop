@@ -2508,3 +2508,187 @@ button:disabled {
   background: var(--accent-dim);
   color: var(--accent);
 }
+
+.memory-panel,
+.scratchpad-panel,
+.jobs-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 0;
+  height: 100%;
+}
+
+.memory-panel__toolbar {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.memory-panel__toolbar label,
+.memory-panel__compose label {
+  display: grid;
+  gap: 4px;
+  color: var(--ink-muted);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.memory-panel__toolbar select,
+.memory-panel__compose input,
+.memory-panel__compose textarea,
+.memory-panel__compose select,
+.scratchpad-panel__editor {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(10, 12, 16, 0.92);
+  color: var(--ink);
+  font: inherit;
+  font-size: 12px;
+}
+
+.memory-panel__toolbar select,
+.memory-panel__compose select {
+  padding: 6px 8px;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.memory-panel__toolbar button,
+.memory-panel__compose button,
+.scratchpad-panel .memory-panel__toolbar button {
+  padding: 7px 10px;
+  border: 1px solid rgba(0, 180, 255, 0.35);
+  border-radius: 8px;
+  background: var(--accent-dim);
+  color: var(--accent);
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.memory-panel__compose {
+  display: grid;
+  gap: 8px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.memory-panel__compose input,
+.memory-panel__compose textarea {
+  width: 100%;
+  padding: 8px 10px;
+}
+
+.memory-panel__list,
+.jobs-board {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 0;
+  overflow: auto;
+}
+
+.memory-card,
+.job-card,
+.jobs-agent-card {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: rgba(18, 22, 28, 0.9);
+  padding: 10px;
+}
+
+.memory-card header,
+.job-card__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.memory-card p,
+.job-card p,
+.jobs-agent-card p {
+  margin: 8px 0;
+  color: var(--ink-muted);
+  font-size: 12px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+}
+
+.memory-card footer,
+.job-card footer,
+.jobs-agent-card footer,
+.scratchpad-panel__meta {
+  color: var(--ink-faint);
+  font-family: "SFMono-Regular", Menlo, monospace;
+  font-size: 10px;
+}
+
+.scratchpad-panel__hint {
+  margin: 0;
+  color: var(--ink-muted);
+  font-size: 12px;
+}
+
+.scratchpad-panel__editor {
+  flex: 1;
+  min-height: 220px;
+  resize: vertical;
+  padding: 12px;
+  line-height: 1.5;
+}
+
+.jobs-panel__agents h3,
+.jobs-board__project > header {
+  margin: 0 0 8px;
+  color: var(--gold);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.jobs-agent-list {
+  display: grid;
+  gap: 8px;
+}
+
+.job-status {
+  padding: 2px 6px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  font-size: 10px;
+  text-transform: uppercase;
+}
+
+.job-status--running {
+  color: var(--accent);
+  border-color: rgba(0, 180, 255, 0.4);
+}
+
+.job-status--queued {
+  color: var(--warning);
+}
+
+.job-status--done {
+  color: var(--success);
+}
+
+.job-status--blocked {
+  color: var(--danger);
+}
+
+.job-card select {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: rgba(10, 12, 16, 0.9);
+  color: var(--ink);
+  font-size: 11px;
+  padding: 4px 6px;
+}
+
+.jobs-board__project + .jobs-board__project {
+  margin-top: 10px;
+}

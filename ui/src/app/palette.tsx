@@ -33,6 +33,9 @@ const panelActions: Array<{ id: PanelId; label: string }> = [
   { id: "plan", label: "Plan" },
   { id: "activity", label: "Activity" },
   { id: "subagents", label: "Subagents" },
+  { id: "jobs", label: "Job board" },
+  { id: "memory", label: "Role memory" },
+  { id: "scratchpad", label: "Scratchpad" },
   { id: "settings", label: "Settings" },
   { id: "terminal", label: "Terminal" },
 ];

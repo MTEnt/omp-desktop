@@ -7,7 +7,10 @@ export type PanelId =
   | "terminal"
   | "plan"
   | "activity"
-  | "subagents";
+  | "subagents"
+  | "jobs"
+  | "memory"
+  | "scratchpad";
 
 interface LayoutStore {
   drawer: PanelId | null;

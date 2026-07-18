@@ -1,4 +1,5 @@
 mod commands;
+mod memory;
 mod omp_config;
 mod error;
 mod pty;
@@ -43,6 +44,14 @@ pub fn run() {
             commands::abort,
             commands::get_state,
             commands::rpc_command,
+            commands::upsert_job,
+            commands::list_jobs,
+            commands::list_agents,
+            commands::save_role_scratchpad,
+            commands::get_role_scratchpad,
+            commands::delete_role_note,
+            commands::add_role_note,
+            commands::list_role_notes,
             commands::rewrite_assistant_message,
         ])
         .run(tauri::generate_context!())

@@ -1,4 +1,5 @@
 use crate::error::{AppError, AppResult};
+use crate::memory;
 use crate::rpc::RpcClient;
 use crate::settings::{AppSettings, ApprovalMode};
 use serde::{Deserialize, Serialize};
@@ -56,7 +57,9 @@ impl SessionManager {
         resume: Option<String>,
     ) -> AppResult<SessionInfo> {
         let id = Uuid::new_v4().to_string();
-        let args = build_omp_args(&cwd, &self.settings, resume.as_deref());
+        let overlay_path = std::env::temp_dir().join(format!("omp-desktop-memory-{id}.yml"));
+        memory::write_mnemopi_overlay(&overlay_path)?;
+        let args = build_omp_args(&cwd, &self.settings, resume.as_deref(), Some(&overlay_path));
         let rpc = RpcClient::spawn(&self.omp_bin, &args).await?;
         rpc.wait_ready(Duration::from_secs(30)).await?;
 
@@ -150,7 +153,12 @@ impl SessionManager {
     }
 }
 
-pub fn build_omp_args(cwd: &Path, settings: &AppSettings, resume: Option<&str>) -> Vec<String> {
+pub fn build_omp_args(
+    cwd: &Path,
+    settings: &AppSettings,
+    resume: Option<&str>,
+    memory_overlay: Option<&Path>,
+) -> Vec<String> {
     let mut args = vec![
         "--mode".into(),
         "rpc".into(),
@@ -159,6 +167,9 @@ pub fn build_omp_args(cwd: &Path, settings: &AppSettings, resume: Option<&str>) 
         "--approval-mode".into(),
         settings.approval_mode.as_cli_value().into(),
     ];
+    if let Some(overlay) = memory_overlay {
+        args.extend(["--config".into(), overlay.display().to_string()]);
+    }
     if settings.approval_mode == ApprovalMode::Yolo {
         args.push("--auto-approve".into());
     }
@@ -191,7 +202,7 @@ mod tests {
     #[test]
     fn yolo_args_include_auto_approve() {
         let settings = AppSettings::default();
-        let args = build_omp_args(Path::new("/tmp/proj"), &settings, None);
+        let args = build_omp_args(Path::new("/tmp/proj"), &settings, None, None);
 
         assert!(args.windows(2).any(|args| args == ["--mode", "rpc"]));
         assert!(args
@@ -210,7 +221,7 @@ mod tests {
             ..AppSettings::default()
         };
 
-        let args = build_omp_args(Path::new("/tmp/proj"), &settings, Some("session-1"));
+        let args = build_omp_args(Path::new("/tmp/proj"), &settings, Some("session-1"), None);
 
         assert_eq!(
             args,

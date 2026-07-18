@@ -33,3 +33,4 @@ dirs = "6"
 which = "7"
 portable-pty = "0.9"
 serde_yaml = "0.9"
+rusqlite = { version = "0.32", features = ["bundled"] }

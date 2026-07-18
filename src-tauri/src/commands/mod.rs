@@ -1,4 +1,5 @@
 use crate::error::AppError;
+use crate::memory::{self, JobCard, MemoryStore, PersistentAgent, RoleMemoryNote, RoleScratchpad};
 use crate::omp_config::{self, AvailableModel, ModelRolesSnapshot};
 use crate::pty::{PtyManager, PtyOutput};
 use crate::session::{SessionInfo, SessionManager};
@@ -14,6 +15,7 @@ pub struct AppState {
     pub sessions: Mutex<SessionManager>,
     pub ptys: Mutex<PtyManager>,
     pub settings: Mutex<AppSettings>,
+    pub memory: Mutex<MemoryStore>,
     pub config_dir: PathBuf,
 }
 
@@ -22,11 +24,14 @@ pub fn initialize_app_state() -> Result<AppState, AppError> {
     let app_settings = settings::load_settings(&config_dir)?;
     let omp_binary = omp_binary_or_fallback(&app_settings);
     let sessions = SessionManager::new(app_settings.clone(), omp_binary);
+    let memory_path = memory::default_memory_db_path()?;
+    let memory = MemoryStore::open(memory_path)?;
 
     Ok(AppState {
         sessions: Mutex::new(sessions),
         ptys: Mutex::new(PtyManager::default()),
         settings: Mutex::new(app_settings),
+        memory: Mutex::new(memory),
         config_dir,
     })
 }
@@ -123,6 +128,18 @@ pub async fn create_session(
         ))
     })?;
     drop(sessions);
+
+    // Persist agent + job card for the job board.
+    {
+        let memory = state.memory.lock().await;
+        let project = PathBuf::from(&info.cwd);
+        let _ = memory.ensure_default_agent_for_session(
+            &info.id,
+            &memory::project_key(&project),
+            &memory::project_label(&project),
+            "default",
+        );
+    }
 
     let event_app = app.clone();
     let session_id = info.id.clone();
@@ -282,6 +299,114 @@ pub async fn rpc_command(
         .await
         .rpc_command(&session_id, &command, params)
         .await
+}
+
+
+#[tauri::command(rename_all = "camelCase")]
+pub async fn list_role_notes(
+    state: State<'_, AppState>,
+    role: String,
+    project_key: String,
+) -> Result<Vec<RoleMemoryNote>, AppError> {
+    state
+        .memory
+        .lock()
+        .await
+        .list_role_notes(&role, &project_key, 100)
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub async fn add_role_note(
+    state: State<'_, AppState>,
+    role: String,
+    project_key: String,
+    kind: String,
+    title: String,
+    body: String,
+    source_session_id: Option<String>,
+) -> Result<RoleMemoryNote, AppError> {
+    state.memory.lock().await.add_role_note(
+        &role,
+        &project_key,
+        &kind,
+        &title,
+        &body,
+        source_session_id.as_deref(),
+    )
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub async fn delete_role_note(state: State<'_, AppState>, id: i64) -> Result<(), AppError> {
+    state.memory.lock().await.delete_role_note(id)
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub async fn get_role_scratchpad(
+    state: State<'_, AppState>,
+    role: String,
+    project_key: String,
+) -> Result<RoleScratchpad, AppError> {
+    state.memory.lock().await.get_scratchpad(&role, &project_key)
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub async fn save_role_scratchpad(
+    state: State<'_, AppState>,
+    role: String,
+    project_key: String,
+    content: String,
+) -> Result<RoleScratchpad, AppError> {
+    state
+        .memory
+        .lock()
+        .await
+        .save_scratchpad(&role, &project_key, &content)
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub async fn list_agents(
+    state: State<'_, AppState>,
+    project_key: Option<String>,
+) -> Result<Vec<PersistentAgent>, AppError> {
+    state
+        .memory
+        .lock()
+        .await
+        .list_agents(project_key.as_deref())
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub async fn list_jobs(
+    state: State<'_, AppState>,
+    project_key: Option<String>,
+) -> Result<Vec<JobCard>, AppError> {
+    state.memory.lock().await.list_jobs(project_key.as_deref())
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub async fn upsert_job(
+    state: State<'_, AppState>,
+    id: String,
+    project_key: String,
+    project_label: String,
+    title: String,
+    detail: String,
+    status: String,
+    assignee_agent_id: Option<String>,
+    assignee_role: Option<String>,
+    session_id: Option<String>,
+) -> Result<JobCard, AppError> {
+    state.memory.lock().await.upsert_job(
+        &id,
+        &project_key,
+        &project_label,
+        &title,
+        &detail,
+        &status,
+        assignee_agent_id.as_deref(),
+        assignee_role.as_deref(),
+        session_id.as_deref(),
+    )
 }
 
 #[cfg(test)]
