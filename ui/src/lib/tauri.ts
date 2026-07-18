@@ -1,6 +1,35 @@
-import { invoke } from "@tauri-apps/api/core";
+import { invoke as tauriInvoke } from "@tauri-apps/api/core";
+import { listen as tauriListen } from "@tauri-apps/api/event";
+import { open as tauriOpen } from "@tauri-apps/plugin-dialog";
 
-import type { AppSettings, AvailableModel, JobCard, ModelRolesSnapshot, PersistentAgent, RoleMemoryNote, RoleScratchpad, SessionInfo } from "../session/types.ts";
+import type {
+  AppSettings,
+  AvailableModel,
+  JobCard,
+  ModelRolesSnapshot,
+  PersistentAgent,
+  RoleMemoryNote,
+  RoleScratchpad,
+  SessionInfo,
+} from "../session/types.ts";
+
+const getInternals = (): { invoke?: unknown } | null => {
+  if (typeof window === "undefined") return null;
+  const w = window as Window & { __TAURI_INTERNALS__?: { invoke?: unknown } };
+  return w.__TAURI_INTERNALS__ ?? null;
+};
+
+export const isTauriRuntime = (): boolean =>
+  typeof getInternals()?.invoke === "function";
+
+async function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
+  if (!isTauriRuntime()) {
+    throw new Error(
+      `Tauri API unavailable (invoke missing). Open OMP Desktop via the native app launcher, not a plain browser tab. Command: ${cmd}`,
+    );
+  }
+  return tauriInvoke<T>(cmd, args);
+}
 
 export const api = {
   getSettings: () => invoke<AppSettings>("get_settings"),
@@ -32,14 +61,9 @@ export const api = {
   resizePty: (sessionId: string, cols: number, rows: number) =>
     invoke<void>("resize_pty", { sessionId, cols, rows }),
 
-  closePty: (sessionId: string) =>
-    invoke<void>("close_pty", { sessionId }),
+  closePty: (sessionId: string) => invoke<void>("close_pty", { sessionId }),
 
-  prompt: (
-    sessionId: string,
-    message: string,
-    streamingBehavior?: string,
-  ) =>
+  prompt: (sessionId: string, message: string, streamingBehavior?: string) =>
     invoke<unknown>("prompt", {
       sessionId,
       message,
@@ -48,8 +72,7 @@ export const api = {
 
   abort: (sessionId: string) => invoke<unknown>("abort", { sessionId }),
 
-  getState: (sessionId: string) =>
-    invoke<unknown>("get_state", { sessionId }),
+  getState: (sessionId: string) => invoke<unknown>("get_state", { sessionId }),
 
   rpcCommand: (
     sessionId: string,
@@ -69,6 +92,7 @@ export const api = {
 
   listRoleNotes: (role: string, projectKey: string) =>
     invoke<RoleMemoryNote[]>("list_role_notes", { role, projectKey }),
+
   addRoleNote: (input: {
     role: string;
     projectKey: string;
@@ -85,15 +109,25 @@ export const api = {
       body: input.body,
       sourceSessionId: input.sourceSessionId ?? null,
     }),
+
   deleteRoleNote: (id: number) => invoke<void>("delete_role_note", { id }),
+
   getRoleScratchpad: (role: string, projectKey: string) =>
     invoke<RoleScratchpad>("get_role_scratchpad", { role, projectKey }),
+
   saveRoleScratchpad: (role: string, projectKey: string, content: string) =>
-    invoke<RoleScratchpad>("save_role_scratchpad", { role, projectKey, content }),
+    invoke<RoleScratchpad>("save_role_scratchpad", {
+      role,
+      projectKey,
+      content,
+    }),
+
   listAgents: (projectKey?: string | null) =>
     invoke<PersistentAgent[]>("list_agents", { projectKey: projectKey ?? null }),
+
   listJobs: (projectKey?: string | null) =>
     invoke<JobCard[]>("list_jobs", { projectKey: projectKey ?? null }),
+
   postTurnHousekeeping: (input: {
     sessionId: string;
     projectKey: string;
@@ -132,3 +166,28 @@ export const api = {
       sessionId: job.sessionId ?? null,
     }),
 };
+
+export async function openDirectoryDialog(): Promise<string | null> {
+  if (!isTauriRuntime()) {
+    throw new Error(
+      "Folder picker requires the native OMP Desktop window (Tauri).",
+    );
+  }
+  const selected = await tauriOpen({
+    directory: true,
+    multiple: false,
+    title: "Open folder",
+  });
+  if (!selected) return null;
+  return Array.isArray(selected) ? (selected[0] ?? null) : selected;
+}
+
+export async function listenTauriEvent<T>(
+  event: string,
+  handler: (payload: T) => void,
+): Promise<() => void> {
+  if (!isTauriRuntime()) {
+    return () => undefined;
+  }
+  return tauriListen<T>(event, ({ payload }) => handler(payload));
+}

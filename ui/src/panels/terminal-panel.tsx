@@ -1,10 +1,9 @@
-import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { FitAddon } from "@xterm/addon-fit";
 import { useEffect, useRef } from "react";
 import { Terminal } from "xterm";
 import "xterm/css/xterm.css";
 
-import { api } from "../lib/tauri.ts";
+import { api, isTauriRuntime, listenTauriEvent } from "../lib/tauri.ts";
 import { selectActiveSession, useSessionStore } from "../session/session-store.ts";
 import type { SessionInfo } from "../session/types.ts";
 import { EmptyState } from "./empty-state.tsx";
@@ -25,7 +24,7 @@ const SessionTerminal = ({ session }: { session: SessionInfo }) => {
     if (!container) return;
 
     let disposed = false;
-    let unlisten: UnlistenFn | undefined;
+    let unlisten: (() => void) | undefined;
     let resizeObserver: ResizeObserver | undefined;
     let resizeFrame: number | undefined;
     let lastSize = "";
@@ -77,9 +76,13 @@ const SessionTerminal = ({ session }: { session: SessionInfo }) => {
     };
 
     const connect = async () => {
-      const stopListening = await listen<PtyOutput>("pty-output", (event) => {
-        if (event.payload.sessionId === session.id) {
-          terminal.write(event.payload.data);
+      if (!isTauriRuntime()) {
+        terminal.writeln("Terminal requires the native OMP Desktop window.");
+        return;
+      }
+      const stopListening = await listenTauriEvent<PtyOutput>("pty-output", (payload) => {
+        if (payload.sessionId === session.id) {
+          terminal.write(payload.data);
         }
       });
       if (disposed) {

@@ -12,24 +12,9 @@ Zen-default UI with expandable panels, multi-tab `omp --mode rpc` sessions, live
 - [Tauri 2 system dependencies](https://v2.tauri.app/start/prerequisites/)
 - `omp` on PATH (v17+), or set the binary path in Settings
 
-
 ## Screenshots
 
-Captured from the live desktop UI:
-
-![Home](docs/screenshots/01-home.png)
-
-![Command palette](docs/screenshots/02-command-palette.png)
-
-![Sessions sidebar](docs/screenshots/03-sessions-sidebar.png)
-
-![Job board](docs/screenshots/04-job-board.png)
-
-![Role memory](docs/screenshots/05-role-memory.png)
-
-![Settings](docs/screenshots/10-settings.png)
-
-More views live in [`docs/screenshots/`](docs/screenshots/).
+![Home](docs/screenshots/home.png)
 
 ## Launch on macOS
 

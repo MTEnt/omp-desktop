@@ -1,7 +1,5 @@
 import { create } from "zustand";
-import { open } from "@tauri-apps/plugin-dialog";
-
-import { api } from "../lib/tauri.ts";
+import { api, openDirectoryDialog } from "../lib/tauri.ts";
 import type {
   ActivityItem,
   AppSettings,
@@ -406,13 +404,7 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
 
   openFolder: async (cwd, resume) => {
     try {
-      const selectedCwd =
-        cwd ??
-        (await open({
-          directory: true,
-          multiple: false,
-          title: "Open folder",
-        }));
+      const selectedCwd = cwd ?? (await openDirectoryDialog());
       if (!selectedCwd) return;
 
       const session = await api.createSession(selectedCwd, resume);
