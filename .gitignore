@@ -7,3 +7,6 @@ node_modules/
 .vite/
 src-tauri/target/
 .worktrees/
+
+# Local Impeccable skill link (run scripts/install-impeccable.sh)
+.agents/skills/impeccable
