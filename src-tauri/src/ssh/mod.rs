@@ -146,13 +146,11 @@ pub fn list_hosts(omp_bin: &Path) -> AppResult<Vec<SshHostInfo>> {
         }
     }
 
-    // 3) ~/.ssh/config Host entries (no wildcards)
+    // 3) ~/.ssh/config Host entries (follows Include, skips wildcards)
     if let Ok(home) = home_dir() {
         let config_path = home.join(".ssh/config");
-        if let Ok(raw) = fs::read_to_string(config_path) {
-            for host in parse_ssh_config(&raw) {
-                by_name.entry(host.name.clone()).or_insert(host);
-            }
+        for host in load_ssh_config_hosts(&config_path) {
+            by_name.entry(host.name.clone()).or_insert(host);
         }
     }
 
@@ -177,7 +175,99 @@ fn host_from_omp_entry(
     }
 }
 
+/// Load hosts from an OpenSSH config file, recursively resolving `Include`.
+pub fn load_ssh_config_hosts(path: &Path) -> Vec<SshHostInfo> {
+    let mut out = Vec::new();
+    let mut seen_files = std::collections::HashSet::new();
+    load_ssh_config_hosts_rec(path, &mut out, &mut seen_files, 0);
+    out
+}
+
+fn load_ssh_config_hosts_rec(
+    path: &Path,
+    out: &mut Vec<SshHostInfo>,
+    seen_files: &mut std::collections::HashSet<PathBuf>,
+    depth: usize,
+) {
+    if depth > 8 || !path.is_file() {
+        return;
+    }
+    let key = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
+    if !seen_files.insert(key) {
+        return;
+    }
+    let Ok(raw) = fs::read_to_string(path) else {
+        return;
+    };
+
+    let base_dir = path
+        .parent()
+        .map(Path::to_path_buf)
+        .unwrap_or_else(|| PathBuf::from("."));
+    for include_path in collect_include_paths(&raw, &base_dir) {
+        let lossy = include_path.to_string_lossy();
+        if lossy.contains('*') {
+            if let Some(parent) = include_path.parent() {
+                let pattern = include_path
+                    .file_name()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or("*");
+                if let Ok(entries) = fs::read_dir(parent) {
+                    for entry in entries.flatten() {
+                        let name = entry.file_name();
+                        let name = name.to_string_lossy();
+                        if glob_match(pattern, &name) {
+                            load_ssh_config_hosts_rec(&entry.path(), out, seen_files, depth + 1);
+                        }
+                    }
+                }
+            }
+        } else {
+            load_ssh_config_hosts_rec(&include_path, out, seen_files, depth + 1);
+        }
+    }
+
+    out.extend(parse_ssh_config(&raw));
+}
+
+fn collect_include_paths(raw: &str, base_dir: &Path) -> Vec<PathBuf> {
+    let mut paths = Vec::new();
+    for line in raw.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() || trimmed.starts_with('#') {
+            continue;
+        }
+        if !trimmed.to_ascii_lowercase().starts_with("include ") {
+            continue;
+        }
+        let rest = trimmed[8..].trim();
+        for token in rest.split_whitespace() {
+            let expanded = expand_tilde(token);
+            let path = PathBuf::from(&expanded);
+            if path.is_absolute() {
+                paths.push(path);
+            } else {
+                paths.push(base_dir.join(path));
+            }
+        }
+    }
+    paths
+}
+
+fn glob_match(pattern: &str, name: &str) -> bool {
+    if pattern == "*" {
+        return true;
+    }
+    if let Some((pre, post)) = pattern.split_once('*') {
+        return name.starts_with(pre)
+            && name.ends_with(post)
+            && name.len() >= pre.len() + post.len();
+    }
+    pattern == name
+}
+
 /// Minimal OpenSSH config parser for concrete Host blocks.
+
 pub fn parse_ssh_config(raw: &str) -> Vec<SshHostInfo> {
     let mut out = Vec::new();
     let mut current_names: Vec<String> = Vec::new();
@@ -558,6 +648,7 @@ pub fn to_remote_session_info(target: &RemoteTarget, resolved_cwd: Option<String
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
 
     #[test]
     fn parses_basic_ssh_config_hosts() {
@@ -582,6 +673,36 @@ Host *.skip
             .as_deref()
             .unwrap_or("")
             .contains(".ssh/id_ed25519"));
+    }
+
+    #[test]
+    #[test]
+    fn follows_include_directives() {
+        let dir = std::env::temp_dir().join(format!(
+            "omp-desktop-ssh-include-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir_all(&dir).unwrap();
+        let included = dir.join("extra.config");
+        fs::write(
+            &included,
+            "Host from-include\n  HostName 1.2.3.4\n  User bob\n",
+        )
+        .unwrap();
+        let main = dir.join("config");
+        fs::write(
+            &main,
+            format!("Include {}\n\nHost local-only\n  HostName 127.0.0.1\n", included.display()),
+        )
+        .unwrap();
+        let hosts = load_ssh_config_hosts(&main);
+        let names: Vec<_> = hosts.iter().map(|h| h.name.as_str()).collect();
+        assert!(names.contains(&"from-include"), "{names:?}");
+        assert!(names.contains(&"local-only"), "{names:?}");
+        let _ = fs::remove_dir_all(dir);
     }
 
     #[test]

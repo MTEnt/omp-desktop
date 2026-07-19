@@ -169,8 +169,9 @@ export const SshConnectModal = ({ open, onClose }: SshConnectModalProps) => {
         </header>
 
         <p className="onboard__body">
-          Open an OMP session against a remote folder. Uses your SSH keys/agent and OMP host config
-          (`~/.omp/agent/ssh.json` + `~/.ssh/config`).
+          Hosts are loaded automatically from this machine (`~/.ssh/config`, Includes, and
+          `~/.omp/agent/ssh.json`). Pick one, set the remote folder, connect. Add host is only for
+          saving a new OMP entry if it is not already on disk.
         </p>
 
         <div className="ssh-modal__grid">
@@ -248,7 +249,7 @@ export const SshConnectModal = ({ open, onClose }: SshConnectModalProps) => {
 
             <div className="ssh-host-list" role="listbox" aria-label="SSH hosts">
               {hosts.length === 0 ? (
-                <p className="onboard-muted">No hosts yet. Add one or ensure `~/.ssh/config` has Host entries.</p>
+                <p className="onboard-muted">No hosts found on this machine yet. Check ~/.ssh/config (and Include files), or add one.</p>
               ) : (
                 hosts.map((host) => {
                   const active = host.name === selectedName;
