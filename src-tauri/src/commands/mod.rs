@@ -5,7 +5,7 @@ use crate::pty::{PtyManager, PtyOutput};
 use crate::session::{SessionInfo, SessionManager};
 use crate::session_history;
 use crate::settings::{self, AppSettings};
-use crate::ssh::{self, RemoteTarget, SshHostInfo, SshProbeResult};
+use crate::ssh::{self, RemoteDirListing, RemoteTarget, SshHostInfo, SshProbeResult, SshRecent};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::fs;
@@ -396,6 +396,22 @@ pub async fn test_ssh_connection(remote: RemoteTarget) -> Result<SshProbeResult,
 }
 
 #[tauri::command(rename_all = "camelCase")]
+pub async fn list_remote_dir(
+    remote: RemoteTarget,
+    path: Option<String>,
+) -> Result<RemoteDirListing, AppError> {
+    let path = path.unwrap_or_else(|| remote.remote_cwd.clone());
+    tokio::task::spawn_blocking(move || ssh::list_remote_dir(&remote, &path))
+        .await
+        .map_err(|e| AppError::Msg(format!("remote ls join error: {e}")))?
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub async fn list_ssh_recents() -> Result<Vec<SshRecent>, AppError> {
+    ssh::load_recents()
+}
+
+#[tauri::command(rename_all = "camelCase")]
 pub async fn create_ssh_session(
     app: AppHandle,
     state: State<'_, AppState>,
@@ -416,6 +432,7 @@ pub async fn create_ssh_session(
     if let Some(cwd) = probe.remote_cwd {
         target.remote_cwd = cwd;
     }
+    let _ = ssh::push_recent(&target);
 
     // Local cwd is a generated workspace stub; remote work uses ssh:// + OMP hosts.
     let local_placeholder = dirs::home_dir()
@@ -486,17 +503,23 @@ pub async fn open_pty(
     session_id: String,
     cwd: String,
 ) -> Result<(), AppError> {
+    let remote = state.sessions.lock().await.remote_target(&session_id);
     let output_session_id = session_id.clone();
     state
         .ptys
         .lock()
         .await
-        .open_pty(&session_id, &PathBuf::from(cwd), move |data| {
-            let _ = app.emit(
-                "pty-output",
-                PtyOutput::new(output_session_id.clone(), data),
-            );
-        })?;
+        .open_pty(
+            &session_id,
+            &PathBuf::from(cwd),
+            remote.as_ref(),
+            move |data| {
+                let _ = app.emit(
+                    "pty-output",
+                    PtyOutput::new(output_session_id.clone(), data),
+                );
+            },
+        )?;
     Ok(())
 }
 

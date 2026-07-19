@@ -9,6 +9,8 @@ import type {
   RemoteTarget,
   SshHostInfo,
   SshProbeResult,
+  SshRecent,
+  RemoteDirListing,
   JobCard,
   ModelRolesSnapshot,
   PersistentAgent,
@@ -85,6 +87,14 @@ export const api = {
 
   createSshSession: (remote: RemoteTarget) =>
     invoke<SessionInfo>("create_ssh_session", { remote }),
+
+  listRemoteDir: (remote: RemoteTarget, path?: string | null) =>
+    invoke<RemoteDirListing>("list_remote_dir", {
+      remote,
+      path: path ?? null,
+    }),
+
+  listSshRecents: () => invoke<SshRecent[]>("list_ssh_recents"),
 
   closeSession: (sessionId: string) =>
     invoke<void>("close_session", { sessionId }),

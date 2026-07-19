@@ -7,6 +7,7 @@ export interface RemoteSessionInfo {
   host: string;
   user?: string | null;
   port?: number | null;
+  keyPath?: string | null;
   remoteCwd: string;
   label: string;
 }
@@ -171,4 +172,28 @@ export interface JobCard {
   sessionId?: string | null;
   createdAt: number;
   updatedAt: number;
+}
+
+
+export interface RemoteDirEntry {
+  name: string;
+  path: string;
+  isDir: boolean;
+}
+
+export interface RemoteDirListing {
+  path: string;
+  parent?: string | null;
+  entries: RemoteDirEntry[];
+}
+
+export interface SshRecent {
+  hostName: string;
+  host: string;
+  user?: string | null;
+  port?: number | null;
+  keyPath?: string | null;
+  remoteCwd: string;
+  label: string;
+  lastUsedMs: number;
 }

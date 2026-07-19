@@ -443,8 +443,13 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
       const hello = [
         `Connected to remote **${label}**.`,
         "",
-        `Remote folder: \`${remoteCwd}\``,
-        `Use OMP host \`${remote.hostName}\` and \`ssh://${remote.hostName}/...\` paths for remote files.`,
+        `Remote project root: \`${remoteCwd}\``,
+        "",
+        "Hard rules for this session:",
+        `1. Treat \`${remoteCwd}\` as the only project root.`,
+        `2. Use OMP host \`${remote.hostName}\` and \`ssh://${remote.hostName}/...\` paths for file tools.`,
+        "3. Do not edit the local desktop stub workspace as if it were the project.",
+        "4. The integrated terminal is attached to the remote host.",
       ].join("\n");
       set((state) => ({
         sessions: [

@@ -42,6 +42,8 @@ pub fn run() {
             commands::test_ssh_connection,
             commands::add_ssh_host,
             commands::list_ssh_hosts,
+            commands::list_ssh_recents,
+            commands::list_remote_dir,
             commands::close_session,
             commands::open_pty,
             commands::write_pty,

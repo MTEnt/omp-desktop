@@ -25,7 +25,12 @@ Use **SSH** in the top bar (or Sessions panel / command palette → “Connect v
 3. Enter the remote folder (`~` or `/path`)
 4. **Test connection**, then **Connect**
 
-Creates a session labeled `user@host:path`. The agent is primed to use OMP SSH hosts and `ssh://` paths. Local integrated terminal remains local in v1.
+Creates a session labeled `user@host:path` with:
+
+- remote folder browser + recents
+- stronger remote-root instructions for the agent
+- **remote integrated terminal** (`ssh -tt` into the folder)
+- top-bar SSH status chip
 
 ## First-launch walkthrough
 

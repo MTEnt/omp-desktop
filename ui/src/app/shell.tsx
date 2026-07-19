@@ -210,6 +210,11 @@ export const Shell = () => {
   const openFolder = useSessionStore((state) => state.openFolder);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [sshOpen, setSshOpen] = useState(false);
+  const activeRemote = useSessionStore((state) => {
+    const id = state.activeSessionId;
+    if (!id) return null;
+    return state.sessions.find((session) => session.id === id)?.remote ?? null;
+  });
   const runtimeStatus = useMemo(
     () => readSessionRuntimeStatus(runtimeSnapshot),
     [runtimeSnapshot],
@@ -317,6 +322,15 @@ export const Shell = () => {
           >
             SSH
           </button>
+          {activeRemote ? (
+            <span
+              className="remote-status-chip"
+              title={`Remote session · ${activeRemote.label}`}
+            >
+              <span className="remote-status-chip__dot" aria-hidden />
+              SSH · {activeRemote.label}
+            </span>
+          ) : null}
           <button
             type="button"
             title="Command palette · ⌘K"

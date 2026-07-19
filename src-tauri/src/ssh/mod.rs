@@ -37,6 +37,7 @@ pub struct RemoteSessionInfo {
     pub host: String,
     pub user: Option<String>,
     pub port: Option<u16>,
+    pub key_path: Option<String>,
     pub remote_cwd: String,
     pub label: String,
 }
@@ -558,40 +559,11 @@ pub fn prepare_remote_workspace(session_id: &str, target: &RemoteTarget) -> AppR
 
     let label = remote_label(target);
     let dest = ssh_destination(target);
-    let agents = format!(
-        r#"# Remote SSH session
-
-This OMP Desktop session is connected to a remote host.
-
-- **Host name:** `{host_name}`
-- **SSH target:** `{dest}`
-- **Remote folder:** `{remote_cwd}`
-- **Label:** `{label}`
-
-## How to work
-
-1. Treat `{remote_cwd}` on `{dest}` as the project root.
-2. Prefer OMP remote paths: `ssh://{host_name}{remote_path_suffix}` (and the `ssh` tool / configured host `{host_name}`).
-3. Do not assume local disk paths refer to the remote machine unless they are `ssh://` URLs.
-4. Before large edits, confirm the remote path exists via SSH tools.
-
-## Connection notes
-
-- Auth is expected via SSH keys / agent (BatchMode).
-- POSIX remote shells are required for `ssh://` file IO.
-"#,
-        host_name = target.host_name,
-        dest = dest,
-        remote_cwd = target.remote_cwd,
-        label = label,
-        remote_path_suffix = if target.remote_cwd.starts_with('/') {
-            target.remote_cwd.clone()
-        } else if target.remote_cwd == "~" {
-            String::new()
-        } else {
-            format!("/{}", target.remote_cwd.trim_start_matches("~/"))
-        }
+    let agents = remote_bootstrap_message(target).replace(
+        "REMOTE SSH SESSION ACTIVE",
+        "# Remote SSH session",
     );
+
     fs::write(base.join("AGENTS.md"), agents)
         .map_err(|e| AppError::Msg(format!("write remote AGENTS.md: {e}")))?;
 
@@ -640,9 +612,231 @@ pub fn to_remote_session_info(target: &RemoteTarget, resolved_cwd: Option<String
         host: t.host.clone(),
         user: t.user.clone(),
         port: t.port,
+        key_path: t.key_path.clone(),
         remote_cwd: t.remote_cwd.clone(),
         label: remote_label(&t),
     }
+}
+
+impl RemoteSessionInfo {
+    pub fn to_target(&self) -> RemoteTarget {
+        RemoteTarget {
+            host_name: self.host_name.clone(),
+            host: self.host.clone(),
+            user: self.user.clone(),
+            port: self.port,
+            key_path: self.key_path.clone(),
+            remote_cwd: self.remote_cwd.clone(),
+        }
+    }
+}
+
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct RemoteDirEntry {
+    pub name: String,
+    pub path: String,
+    pub is_dir: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct RemoteDirListing {
+    pub path: String,
+    pub parent: Option<String>,
+    pub entries: Vec<RemoteDirEntry>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct SshRecent {
+    pub host_name: String,
+    pub host: String,
+    pub user: Option<String>,
+    pub port: Option<u16>,
+    pub key_path: Option<String>,
+    pub remote_cwd: String,
+    pub label: String,
+    pub last_used_ms: u64,
+}
+
+fn recents_path() -> AppResult<PathBuf> {
+    let base = dirs::data_local_dir()
+        .or_else(dirs::data_dir)
+        .ok_or_else(|| AppError::Msg("no local data dir".into()))?
+        .join("omp-desktop");
+    fs::create_dir_all(&base).map_err(|e| AppError::Msg(format!("create data dir: {e}")))?;
+    Ok(base.join("ssh-recents.json"))
+}
+
+pub fn load_recents() -> AppResult<Vec<SshRecent>> {
+    let path = recents_path()?;
+    if !path.is_file() {
+        return Ok(Vec::new());
+    }
+    let raw = fs::read_to_string(path).map_err(|e| AppError::Msg(format!("read recents: {e}")))?;
+    let mut items: Vec<SshRecent> = serde_json::from_str(&raw).unwrap_or_default();
+    items.sort_by(|a, b| b.last_used_ms.cmp(&a.last_used_ms));
+    Ok(items)
+}
+
+pub fn push_recent(target: &RemoteTarget) -> AppResult<Vec<SshRecent>> {
+    let mut items = load_recents().unwrap_or_default();
+    let label = remote_label(target);
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0);
+    items.retain(|item| {
+        !(item.host_name == target.host_name && item.remote_cwd == target.remote_cwd)
+    });
+    items.insert(
+        0,
+        SshRecent {
+            host_name: target.host_name.clone(),
+            host: target.host.clone(),
+            user: target.user.clone(),
+            port: target.port,
+            key_path: target.key_path.clone(),
+            remote_cwd: target.remote_cwd.clone(),
+            label,
+            last_used_ms: now,
+        },
+    );
+    items.truncate(12);
+    let path = recents_path()?;
+    fs::write(path, serde_json::to_string_pretty(&items)?)
+        .map_err(|e| AppError::Msg(format!("write recents: {e}")))?;
+    Ok(items)
+}
+
+pub fn list_remote_dir(target: &RemoteTarget, path: &str) -> AppResult<RemoteDirListing> {
+    let requested = {
+        let t = path.trim();
+        if t.is_empty() {
+            target.remote_cwd.clone()
+        } else {
+            t.to_string()
+        }
+    };
+    let mut args = build_ssh_args(&RemoteTarget {
+        remote_cwd: requested.clone(),
+        ..target.clone()
+    });
+    // Reuse destination args but run listing script instead of probe script.
+    // build_ssh_args currently ends with destination only? Check - it ends with dest then we push script in probe.
+    // build_ssh_args returns args including destination. Good.
+    let script = format!(
+        "set -e; TARGET={cwd}; \
+if [ \"$TARGET\" = '~' ] || [ -z \"$TARGET\" ]; then TARGET=\"$HOME\"; fi; \
+case \"$TARGET\" in ~/*) TARGET=\"$HOME${{TARGET#\\~}}\";; esac; \
+if [ ! -d \"$TARGET\" ]; then echo \"NOTDIR:$TARGET\" >&2; exit 3; fi; \
+cd \"$TARGET\"; \
+PWD=$(pwd -P); \
+echo \"PWD:$PWD\"; \
+if [ \"$PWD\" != '/' ]; then dirname \"$PWD\" | sed 's/^/PARENT:/'; fi; \
+# entries: D|name or F|name
+ls -A1 | while IFS= read -r name; do \
+  if [ -d \"$name\" ]; then printf 'D|%s\\n' \"$name\"; else printf 'F|%s\\n' \"$name\"; fi; \
+done",
+        cwd = shell_single_quote(&requested)
+    );
+    args.push(script);
+
+    let output = Command::new("ssh")
+        .args(&args)
+        .output()
+        .map_err(|e| AppError::Msg(format!("failed to spawn ssh: {e}")))?;
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+    if !output.status.success() {
+        return Err(AppError::Msg(if stderr.is_empty() {
+            format!("remote ls failed ({})", output.status)
+        } else {
+            stderr
+        }));
+    }
+
+    let mut resolved = requested.clone();
+    let mut parent = None;
+    let mut entries = Vec::new();
+    for line in stdout.lines() {
+        if let Some(rest) = line.strip_prefix("PWD:") {
+            resolved = rest.to_string();
+            continue;
+        }
+        if let Some(rest) = line.strip_prefix("PARENT:") {
+            let p = rest.trim();
+            if !p.is_empty() {
+                parent = Some(p.to_string());
+            }
+            continue;
+        }
+        if let Some(rest) = line.strip_prefix("D|") {
+            let name = rest.to_string();
+            if name == "." || name == ".." { continue; }
+            let path = join_remote_path(&resolved, &name);
+            entries.push(RemoteDirEntry { name, path, is_dir: true });
+            continue;
+        }
+        if let Some(rest) = line.strip_prefix("F|") {
+            let name = rest.to_string();
+            let path = join_remote_path(&resolved, &name);
+            entries.push(RemoteDirEntry { name, path, is_dir: false });
+        }
+    }
+    entries.sort_by(|a, b| match (a.is_dir, b.is_dir) {
+        (true, false) => std::cmp::Ordering::Less,
+        (false, true) => std::cmp::Ordering::Greater,
+        _ => a.name.to_ascii_lowercase().cmp(&b.name.to_ascii_lowercase()),
+    });
+    Ok(RemoteDirListing {
+        path: resolved,
+        parent,
+        entries,
+    })
+}
+
+fn join_remote_path(parent: &str, name: &str) -> String {
+    if parent == "/" {
+        format!("/{name}")
+    } else {
+        format!("{parent}/{name}")
+    }
+}
+
+pub fn remote_bootstrap_message(target: &RemoteTarget) -> String {
+    let label = remote_label(target);
+    let dest = ssh_destination(target);
+    format!(
+        "REMOTE SSH SESSION ACTIVE\n\
+\n\
+You are working on a remote machine through OMP Desktop.\n\
+\n\
+- Host name: `{host}`\n\
+- SSH target: `{dest}`\n\
+- Remote project root: `{cwd}`\n\
+- Label: `{label}`\n\
+\n\
+Hard rules for this session:\n\
+1. Treat `{cwd}` on `{dest}` as the only project root.\n\
+2. Use OMP host `{host}` and paths like `ssh://{host}{suffix}` for file tools.\n\
+3. Do not edit or assume the local desktop stub workspace is the project.\n\
+4. Prefer remote shell / SSH tools for commands on this machine.\n\
+5. Before large changes, confirm remote paths exist.\n",
+        host = target.host_name,
+        dest = dest,
+        cwd = target.remote_cwd,
+        label = label,
+        suffix = if target.remote_cwd.starts_with('/') {
+            target.remote_cwd.clone()
+        } else if target.remote_cwd == "~" {
+            String::new()
+        } else {
+            format!("/{}", target.remote_cwd.trim_start_matches("~/"))
+        }
+    )
 }
 
 #[cfg(test)]

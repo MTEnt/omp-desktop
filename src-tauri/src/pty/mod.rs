@@ -2,6 +2,7 @@ use std::ffi::OsString;
 use std::path::PathBuf;
 
 use crate::error::{AppError, AppResult};
+use crate::ssh::{ssh_destination, RemoteTarget};
 use portable_pty::{native_pty_system, Child, CommandBuilder, MasterPty, PtySize};
 use std::collections::HashMap;
 use std::io::{Read, Write};
@@ -43,12 +44,88 @@ pub struct PtyManager {
 }
 
 impl PtyManager {
-    pub fn open_pty<F>(&mut self, session_id: &str, cwd: &Path, on_output: F) -> AppResult<bool>
+    pub fn open_pty<F>(
+        &mut self,
+        session_id: &str,
+        cwd: &Path,
+        remote: Option<&RemoteTarget>,
+        on_output: F,
+    ) -> AppResult<bool>
     where
         F: Fn(String) + Send + 'static,
     {
+        if let Some(target) = remote {
+            return self.open_remote_pty(session_id, target, on_output);
+        }
         let shell = shell_from_env(std::env::var_os("SHELL"));
         self.open_pty_with_shell(session_id, cwd, &shell, on_output)
+    }
+
+    fn open_remote_pty<F>(
+        &mut self,
+        session_id: &str,
+        target: &RemoteTarget,
+        on_output: F,
+    ) -> AppResult<bool>
+    where
+        F: Fn(String) + Send + 'static,
+    {
+        if self.processes.contains_key(session_id) {
+            return Ok(false);
+        }
+
+        let pair = native_pty_system()
+            .openpty(INITIAL_PTY_SIZE)
+            .map_err(|error| pty_error("open PTY", error))?;
+        let mut reader = pair
+            .master
+            .try_clone_reader()
+            .map_err(|error| pty_error("clone PTY reader", error))?;
+        let writer = pair
+            .master
+            .take_writer()
+            .map_err(|error| pty_error("take PTY writer", error))?;
+
+        let mut command = CommandBuilder::new("ssh");
+        for arg in remote_ssh_pty_args(target) {
+            command.arg(arg);
+        }
+        let mut child = pair
+            .slave
+            .spawn_command(command)
+            .map_err(|error| pty_error("spawn remote SSH PTY", error))?;
+        drop(pair.slave);
+
+        let reader_session_id = session_id.to_owned();
+        if let Err(error) = thread::Builder::new()
+            .name(format!("pty-reader-{reader_session_id}"))
+            .spawn(move || {
+                let mut buffer = [0_u8; 16 * 1024];
+                loop {
+                    match reader.read(&mut buffer) {
+                        Ok(0) => break,
+                        Ok(read) => {
+                            on_output(String::from_utf8_lossy(&buffer[..read]).into_owned());
+                        }
+                        Err(error) if error.kind() == std::io::ErrorKind::Interrupted => continue,
+                        Err(_) => break,
+                    }
+                }
+            })
+        {
+            let _ = child.kill();
+            return Err(pty_error("start PTY reader", error));
+        }
+
+        self.processes.insert(
+            session_id.to_owned(),
+            PtyProcess {
+                master: pair.master,
+                writer,
+                child,
+            },
+        );
+        Ok(true)
     }
 
     fn open_pty_with_shell<F>(
@@ -161,6 +238,44 @@ impl Drop for PtyManager {
 
 fn pty_error(action: &str, error: impl std::fmt::Display) -> AppError {
     AppError::Msg(format!("unable to {action}: {error}"))
+}
+
+
+fn remote_ssh_pty_args(target: &RemoteTarget) -> Vec<String> {
+    let mut args = vec![
+        "-tt".into(),
+        "-o".into(),
+        "BatchMode=yes".into(),
+        "-o".into(),
+        "ConnectTimeout=8".into(),
+        "-o".into(),
+        "StrictHostKeyChecking=accept-new".into(),
+    ];
+    if let Some(port) = target.port {
+        args.push("-p".into());
+        args.push(port.to_string());
+    }
+    if let Some(key) = &target.key_path {
+        if !key.is_empty() {
+            args.push("-i".into());
+            args.push(key.clone());
+        }
+    }
+    args.push(ssh_destination(target));
+
+    let remote_cwd = target.remote_cwd.trim();
+    let remote_cwd = if remote_cwd.is_empty() { "~" } else { remote_cwd };
+    let quoted = shell_single_quote(remote_cwd);
+    // Login shell in the remote project directory.
+    let script = format!(
+        "set -e; TARGET={quoted}; if [ \"$TARGET\" = '~' ] || [ -z \"$TARGET\" ]; then TARGET=\"$HOME\"; fi; case \"$TARGET\" in ~/*) TARGET=\"$HOME${{TARGET#\\~}}\";; esac; cd \"$TARGET\"; exec \"${{SHELL:-/bin/bash}}\" -l"
+    );
+    args.push(script);
+    args
+}
+
+fn shell_single_quote(value: &str) -> String {
+    format!("'{}'", value.replace('\'', r#"'\''"#))
 }
 
 fn shell_from_env(shell: Option<OsString>) -> PathBuf {

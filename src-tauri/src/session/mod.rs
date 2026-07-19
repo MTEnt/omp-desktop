@@ -130,6 +130,17 @@ impl SessionManager {
             .await
     }
 
+    pub fn remote_target(&self, session_id: &str) -> Option<RemoteTarget> {
+        self.tabs
+            .get(session_id)
+            .and_then(|tab| tab.info.remote.as_ref())
+            .map(|remote| remote.to_target())
+    }
+
+    pub fn session_info(&self, session_id: &str) -> Option<SessionInfo> {
+        self.tabs.get(session_id).map(|tab| tab.info.clone())
+    }
+
     pub async fn rpc_command(
         &mut self,
         session_id: &str,
