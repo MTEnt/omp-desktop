@@ -17,6 +17,19 @@ export interface AppSettings {
   defaultThinking?: string | null;
   defaultProfile?: string | null;
   theme: string;
+  /** False until the first-launch walkthrough is finished. */
+  onboardingCompleted?: boolean;
+}
+
+export interface SetupStatus {
+  ompFound: boolean;
+  ompPath?: string | null;
+  ompVersion?: string | null;
+  impeccableSkillPresent: boolean;
+  impeccableSkillPath?: string | null;
+  impeccableRulesPresent: boolean;
+  onboardingCompleted: boolean;
+  homeDir?: string | null;
 }
 
 export type TranscriptItem =

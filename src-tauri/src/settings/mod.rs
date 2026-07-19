@@ -36,6 +36,10 @@ pub struct AppSettings {
     pub default_thinking: Option<String>,
     pub default_profile: Option<String>,
     pub theme: String,
+    /// First-launch walkthrough finished. Missing field on legacy settings
+    /// files is treated as completed so existing installs are not interrupted.
+    #[serde(default)]
+    pub onboarding_completed: bool,
 }
 
 impl Default for AppSettings {
@@ -47,6 +51,7 @@ impl Default for AppSettings {
             default_thinking: None,
             default_profile: None,
             theme: "dark".into(),
+            onboarding_completed: false,
         }
     }
 }
@@ -61,7 +66,13 @@ pub fn load_settings(config_dir: &Path) -> AppResult<AppSettings> {
         return Ok(AppSettings::default());
     }
     let raw = fs::read_to_string(path)?;
-    Ok(serde_json::from_str(&raw)?)
+    let value: serde_json::Value = serde_json::from_str(&raw)?;
+    let mut settings: AppSettings = serde_json::from_value(value.clone())?;
+    // Legacy settings.json without the field: do not force the walkthrough again.
+    if value.get("onboardingCompleted").is_none() {
+        settings.onboarding_completed = true;
+    }
+    Ok(settings)
 }
 
 pub fn save_settings(config_dir: &Path, settings: &AppSettings) -> AppResult<()> {

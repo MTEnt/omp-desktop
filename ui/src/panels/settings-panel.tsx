@@ -10,6 +10,7 @@ const defaultSettings: AppSettings = {
   defaultThinking: null,
   defaultProfile: null,
   theme: "dark",
+  onboardingCompleted: false,
 };
 
 const optionalValue = (value: string): string | null => value.trim() || null;
@@ -40,6 +41,7 @@ export const SettingsPanel = () => {
       defaultModel: optionalValue(form.defaultModel ?? ""),
       defaultThinking: optionalValue(form.defaultThinking ?? ""),
       defaultProfile: optionalValue(form.defaultProfile ?? ""),
+      onboardingCompleted: form.onboardingCompleted ?? settings?.onboardingCompleted ?? true,
     });
     setSaveState(didSave ? "saved" : "error");
   };
@@ -136,6 +138,23 @@ export const SettingsPanel = () => {
           <option value="light">Light</option>
         </select>
       </label>
+
+      <div className="settings-form__actions">
+        <button
+          type="button"
+          className="panel-button"
+          onClick={() =>
+            void saveSettings({
+              ...form,
+              onboardingCompleted: false,
+            }).then((ok) => {
+              if (ok) window.location.reload();
+            })
+          }
+        >
+          Replay first-launch walkthrough
+        </button>
+      </div>
 
       <div className="settings-form__footer">
         <button

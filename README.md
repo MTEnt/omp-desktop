@@ -16,6 +16,17 @@ Zen-default UI with expandable panels, multi-tab `omp --mode rpc` sessions, live
 
 ![Home](docs/screenshots/home.png)
 
+## First-launch walkthrough
+
+On first launch, OMP Desktop opens a short setup:
+
+1. Confirm the `omp` CLI is available
+2. Optionally install **Impeccable** (default UI craft standard for agents)
+3. Pick approval defaults
+4. Open your first folder/session
+
+Replay anytime from **Settings → Replay first-launch walkthrough**.
+
 ## Launch on macOS
 
 Double-click:

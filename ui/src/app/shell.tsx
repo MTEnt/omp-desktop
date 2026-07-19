@@ -22,6 +22,7 @@ import { TerminalPanel } from "../panels/terminal-panel.tsx";
 import { CommandPalette } from "./palette.tsx";
 import { PixelPieLogo } from "./pixel-pie-logo.tsx";
 import { RoleModelStrip } from "./role-model-picker.tsx";
+import { OnboardingWalkthrough } from "./onboarding-walkthrough.tsx";
 import { TaskProgressStrip } from "./task-progress-strip.tsx";
 
 const panelMeta: Record<PanelId, { label: string; eyebrow: string }> = {
@@ -378,6 +379,7 @@ export const Shell = () => {
         <RightRail active={activeTargets} onSelect={selectRail} />
       </div>
       <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} />
+      <OnboardingWalkthrough />
     </div>
   );
 };

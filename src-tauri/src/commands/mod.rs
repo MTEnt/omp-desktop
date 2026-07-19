@@ -5,9 +5,10 @@ use crate::pty::{PtyManager, PtyOutput};
 use crate::session::{SessionInfo, SessionManager};
 use crate::session_history;
 use crate::settings::{self, AppSettings};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::path::PathBuf;
+use std::fs;
+use std::path::{Path, PathBuf};
 use tauri::{AppHandle, Emitter, State};
 use tokio::sync::Mutex;
 
@@ -106,6 +107,199 @@ pub async fn save_settings(
     *state.settings.lock().await = settings;
     Ok(())
 }
+
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SetupStatus {
+    pub omp_found: bool,
+    pub omp_path: Option<String>,
+    pub omp_version: Option<String>,
+    pub impeccable_skill_present: bool,
+    pub impeccable_skill_path: Option<String>,
+    pub impeccable_rules_present: bool,
+    pub onboarding_completed: bool,
+    pub home_dir: Option<String>,
+}
+
+fn home_dir() -> Option<PathBuf> {
+    dirs::home_dir()
+}
+
+fn which_omp(settings: &AppSettings) -> Option<PathBuf> {
+    settings::resolve_omp_binary(settings).ok()
+}
+
+fn read_omp_version(bin: &Path) -> Option<String> {
+    let output = std::process::Command::new(bin)
+        .arg("--version")
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let text = String::from_utf8_lossy(&output.stdout);
+    let line = text.lines().next().unwrap_or("").trim();
+    if line.is_empty() {
+        None
+    } else {
+        Some(line.to_string())
+    }
+}
+
+fn impeccable_skill_candidates() -> Vec<PathBuf> {
+    let mut out = Vec::new();
+    if let Some(home) = home_dir() {
+        out.push(home.join(".agents/skills/impeccable/SKILL.md"));
+        out.push(home.join(".omp/agent/skills/impeccable/SKILL.md"));
+        out.push(home.join(".claude/skills/impeccable/SKILL.md"));
+    }
+    out
+}
+
+fn first_existing(paths: &[PathBuf]) -> Option<PathBuf> {
+    paths.iter().find(|p| p.is_file()).cloned()
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub async fn get_setup_status(state: State<'_, AppState>) -> Result<SetupStatus, AppError> {
+    let settings = state.settings.lock().await.clone();
+    let omp_path = which_omp(&settings);
+    let omp_version = omp_path.as_ref().and_then(|p| read_omp_version(p));
+    let skill = first_existing(&impeccable_skill_candidates());
+    let rules = home_dir().map(|h| h.join(".omp/agent/RULES.md"));
+    let rules_present = rules
+        .as_ref()
+        .map(|p| {
+            p.is_file()
+                && fs::read_to_string(p)
+                    .map(|c| c.to_ascii_lowercase().contains("impeccable"))
+                    .unwrap_or(false)
+        })
+        .unwrap_or(false);
+
+    Ok(SetupStatus {
+        omp_found: omp_path.is_some(),
+        omp_path: omp_path.map(|p| p.display().to_string()),
+        omp_version,
+        impeccable_skill_present: skill.is_some(),
+        impeccable_skill_path: skill.map(|p| p.display().to_string()),
+        impeccable_rules_present: rules_present,
+        onboarding_completed: settings.onboarding_completed,
+        home_dir: home_dir().map(|p| p.display().to_string()),
+    })
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub async fn install_impeccable() -> Result<SetupStatus, AppError> {
+    let home = home_dir().ok_or_else(|| AppError::Msg("home directory unavailable".into()))?;
+    let agents_skill = home.join(".agents/skills/impeccable");
+    let omp_skills = home.join(".omp/agent/skills");
+    let omp_skill_link = omp_skills.join("impeccable");
+    let rules_path = home.join(".omp/agent/RULES.md");
+    let agents_rules = home.join(".agents/rules");
+
+    if !agents_skill.join("SKILL.md").is_file() {
+        let status = std::process::Command::new("npx")
+            .args([
+                "--yes",
+                "impeccable@latest",
+                "install",
+                "--yes",
+                "--scope=global",
+                "--providers=agents,claude",
+                "--no-hooks",
+            ])
+            .status()
+            .map_err(|error| AppError::Msg(format!("failed to run npx impeccable: {error}")))?;
+        if !status.success() {
+            return Err(AppError::Msg(
+                "impeccable install failed — ensure Node.js/npm are installed and network is available"
+                    .into(),
+            ));
+        }
+    }
+
+    if !agents_skill.join("SKILL.md").is_file() {
+        return Err(AppError::Msg(
+            "impeccable skill still missing after install".into(),
+        ));
+    }
+
+    fs::create_dir_all(&omp_skills)
+        .map_err(|error| AppError::Msg(format!("create omp skills dir: {error}")))?;
+    let _ = fs::remove_file(&omp_skill_link);
+    #[cfg(unix)]
+    {
+        std::os::unix::fs::symlink(&agents_skill, &omp_skill_link).map_err(|error| {
+            AppError::Msg(format!("link impeccable into ~/.omp/agent/skills: {error}"))
+        })?;
+    }
+    #[cfg(not(unix))]
+    {
+        if omp_skill_link.exists() {
+            let _ = fs::remove_dir_all(&omp_skill_link);
+        }
+        copy_dir_all(&agents_skill, &omp_skill_link)?;
+    }
+
+    fs::create_dir_all(home.join(".omp/agent"))
+        .map_err(|error| AppError::Msg(format!("create omp agent dir: {error}")))?;
+    let rules = "# Harness rules (always apply)\n\n## Impeccable design standard (default)\n\nFor any UI / frontend / visual / UX work, agents MUST follow Impeccable (https://impeccable.style/docs/).\n\n1. Read skill://impeccable before designing or editing UI.\n2. Run: node <skill-base-dir>/scripts/context.mjs once per session (cwd = project).\n3. Load skill://impeccable/reference/<command>.md for craft/shape/polish/critique/audit/layout/typeset/animate/etc.\n4. Obey absolute bans (no AI-slop defaults).\n5. Prefer PRODUCT.md + DESIGN.md when present.\n\nNon-UI tasks are exempt; mixed changes apply Impeccable to the UI portion.\n";
+    let should_write_rules = !rules_path.is_file()
+        || fs::read_to_string(&rules_path)
+            .map(|c| !c.to_ascii_lowercase().contains("impeccable"))
+            .unwrap_or(true);
+    if should_write_rules {
+        fs::write(&rules_path, rules)
+            .map_err(|error| AppError::Msg(format!("write RULES.md: {error}")))?;
+    }
+
+    fs::create_dir_all(&agents_rules)
+        .map_err(|error| AppError::Msg(format!("create agents rules dir: {error}")))?;
+    let agents_rule = agents_rules.join("impeccable.md");
+    if !agents_rule.is_file() {
+        fs::write(
+            &agents_rule,
+            "---\ndescription: Require Impeccable for all UI/frontend work\nalwaysApply: true\n---\n\n# Impeccable (always apply for UI)\n\nBefore any UI/frontend/visual change, read `skill://impeccable` and follow https://impeccable.style/docs/.\n",
+        )
+        .map_err(|error| AppError::Msg(format!("write agents rule: {error}")))?;
+    }
+
+    let skill = first_existing(&impeccable_skill_candidates());
+    Ok(SetupStatus {
+        omp_found: which::which("omp").is_ok(),
+        omp_path: which::which("omp").ok().map(|p| p.display().to_string()),
+        omp_version: which::which("omp").ok().and_then(|p| read_omp_version(&p)),
+        impeccable_skill_present: skill.is_some(),
+        impeccable_skill_path: skill.map(|p| p.display().to_string()),
+        impeccable_rules_present: rules_path.is_file()
+            && fs::read_to_string(&rules_path)
+                .map(|c| c.to_ascii_lowercase().contains("impeccable"))
+                .unwrap_or(false),
+        onboarding_completed: false,
+        home_dir: Some(home.display().to_string()),
+    })
+}
+
+#[cfg(not(unix))]
+fn copy_dir_all(src: &Path, dst: &Path) -> AppResult<()> {
+    fs::create_dir_all(dst).map_err(|e| AppError::Msg(format!("mkdir: {e}")))?;
+    for entry in fs::read_dir(src).map_err(|e| AppError::Msg(format!("read_dir: {e}")))? {
+        let entry = entry.map_err(|e| AppError::Msg(format!("dir entry: {e}")))?;
+        let ty = entry
+            .file_type()
+            .map_err(|e| AppError::Msg(format!("file_type: {e}")))?;
+        let to = dst.join(entry.file_name());
+        if ty.is_dir() {
+            copy_dir_all(&entry.path(), &to)?;
+        } else {
+            fs::copy(entry.path(), to).map_err(|e| AppError::Msg(format!("copy: {e}")))?;
+        }
+    }
+    Ok(())
+}
+
 
 #[tauri::command(rename_all = "camelCase")]
 pub async fn list_sessions(state: State<'_, AppState>) -> Result<Vec<SessionInfo>, AppError> {
@@ -446,7 +640,8 @@ mod tests {
     use super::*;
     use crate::settings::AppSettings;
     use serde_json::json;
-    use std::path::PathBuf;
+    use std::fs;
+use std::path::{Path, PathBuf};
 
     #[test]
     fn event_envelope_serializes_session_id_as_camel_case() {

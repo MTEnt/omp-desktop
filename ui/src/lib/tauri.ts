@@ -4,6 +4,7 @@ import { open as tauriOpen } from "@tauri-apps/plugin-dialog";
 
 import type {
   AppSettings,
+  SetupStatus,
   AvailableModel,
   JobCard,
   ModelRolesSnapshot,
@@ -33,6 +34,10 @@ async function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T
 
 export const api = {
   getSettings: () => invoke<AppSettings>("get_settings"),
+
+  getSetupStatus: () => invoke<SetupStatus>("get_setup_status"),
+
+  installImpeccable: () => invoke<SetupStatus>("install_impeccable"),
 
   getModelRoles: () => invoke<ModelRolesSnapshot>("get_model_roles"),
 

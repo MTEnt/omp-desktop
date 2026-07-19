@@ -33,6 +33,8 @@ pub fn run() {
             commands::list_available_models,
             commands::set_model_role,
             commands::save_settings,
+            commands::get_setup_status,
+            commands::install_impeccable,
             commands::list_sessions,
             commands::create_session,
             commands::close_session,
