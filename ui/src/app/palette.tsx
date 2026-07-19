@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { api } from "../lib/tauri.ts";
-import { readSessionRuntimeStatus, useSessionStore } from "../session/session-store.ts";
+import { LAUNCH_RECIPES, readSessionRuntimeStatus, useSessionStore } from "../session/session-store.ts";
 import type { ApprovalMode } from "../session/types.ts";
 import { useLayoutStore, type PanelId } from "./layout-store.ts";
 
@@ -198,6 +198,30 @@ export const CommandPalette = ({ open, onOpenChange }: CommandPaletteProps) => {
         run: () => {
           window.dispatchEvent(new Event("omp-desktop:open-ssh"));
         },
+      },
+      ...LAUNCH_RECIPES.map((recipe) => ({
+        id: `recipe-${recipe.id}`,
+        group: "Launch",
+        label: recipe.label,
+        detail: recipe.detail,
+        keywords: recipe.keywords,
+        disabled: !activeSessionId,
+        run: async () => {
+          const ok = await useSessionStore.getState().launchRecipe(recipe, {
+            url: "http://localhost:5173",
+            topic: "the current project",
+            target: "the active UI",
+          });
+          if (!ok) throw new Error("Launch failed");
+        },
+      })),
+      {
+        id: "open-launch-panel",
+        group: "Launch",
+        label: "Open Launch panel",
+        detail: "Recipes, skills, browser and companion entry points",
+        keywords: "skills workflows recipes",
+        run: () => openDrawer("launch"),
       },
       {
         id: "open-settings",

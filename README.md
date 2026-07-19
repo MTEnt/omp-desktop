@@ -16,6 +16,16 @@ Zen-default UI with expandable panels, multi-tab `omp --mode rpc` sessions, live
 
 ![Home](docs/screenshots/home.png)
 
+## Launch, Browser, and Companion
+
+Desktop can keep OMP workflows inside the GUI:
+
+- **Launch panel** — Superpowers brainstorm, Impeccable critique/polish, browser QA recipes, and discovered skills
+- **Browser panel** — launch headless/headed browser tasks and collect screenshots/artifacts from the OMP `browser` tool
+- **Companion panel** — attach/embed localhost companions (e.g. brainstorm visual server)
+
+Also available from the command palette under **Launch**.
+
 ## Connect via SSH
 
 Use **SSH** in the top bar (or Sessions panel / command palette → “Connect via SSH”):

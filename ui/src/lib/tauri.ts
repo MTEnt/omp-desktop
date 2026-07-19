@@ -10,6 +10,7 @@ import type {
   SshHostInfo,
   SshProbeResult,
   SshRecent,
+  SkillInfo,
   RemoteDirListing,
   JobCard,
   ModelRolesSnapshot,
@@ -95,6 +96,8 @@ export const api = {
     }),
 
   listSshRecents: () => invoke<SshRecent[]>("list_ssh_recents"),
+
+  listSkills: () => invoke<SkillInfo[]>("list_skills"),
 
   closeSession: (sessionId: string) =>
     invoke<void>("close_session", { sessionId }),

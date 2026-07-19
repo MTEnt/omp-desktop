@@ -36,6 +36,7 @@ pub fn run() {
             commands::save_settings,
             commands::get_setup_status,
             commands::install_impeccable,
+            commands::list_skills,
             commands::list_sessions,
             commands::create_session,
             commands::create_ssh_session,

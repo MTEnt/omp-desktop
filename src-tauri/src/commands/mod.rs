@@ -302,6 +302,87 @@ fn copy_dir_all(src: &Path, dst: &Path) -> AppResult<()> {
 }
 
 
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SkillInfo {
+    pub name: String,
+    pub description: String,
+    pub path: String,
+    pub source: String,
+}
+
+fn parse_skill_frontmatter(raw: &str) -> (Option<String>, Option<String>) {
+    let trimmed = raw.trim_start();
+    if !trimmed.starts_with("---") {
+        return (None, None);
+    }
+    let rest = &trimmed[3..];
+    let Some(end) = rest.find("\n---") else {
+        return (None, None);
+    };
+    let fm = &rest[..end];
+    let mut name = None;
+    let mut description = None;
+    for line in fm.lines() {
+        let line = line.trim();
+        if let Some(v) = line.strip_prefix("name:") {
+            name = Some(v.trim().trim_matches('"').to_string());
+        } else if let Some(v) = line.strip_prefix("description:") {
+            let v = v.trim().trim_matches('"');
+            description = Some(v.to_string());
+        }
+    }
+    (name, description)
+}
+
+fn scan_skills_dir(dir: &Path, source: &str, out: &mut Vec<SkillInfo>, seen: &mut std::collections::HashSet<String>) {
+    let Ok(entries) = fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if !path.is_dir() {
+            continue;
+        }
+        let skill_md = path.join("SKILL.md");
+        if !skill_md.is_file() {
+            continue;
+        }
+        let Ok(raw) = fs::read_to_string(&skill_md) else {
+            continue;
+        };
+        let folder = path
+            .file_name()
+            .and_then(|s| s.to_str())
+            .unwrap_or("skill");
+        let (name, description) = parse_skill_frontmatter(&raw);
+        let name = name.unwrap_or_else(|| folder.to_string());
+        if !seen.insert(name.clone()) {
+            continue;
+        }
+        out.push(SkillInfo {
+            name,
+            description: description.unwrap_or_default(),
+            path: skill_md.display().to_string(),
+            source: source.to_string(),
+        });
+    }
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub async fn list_skills() -> Result<Vec<SkillInfo>, AppError> {
+    let mut out = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    if let Some(home) = dirs::home_dir() {
+        scan_skills_dir(&home.join(".omp/agent/skills"), "omp-user", &mut out, &mut seen);
+        scan_skills_dir(&home.join(".agents/skills"), "agents-user", &mut out, &mut seen);
+        scan_skills_dir(&home.join(".claude/skills"), "claude-user", &mut out, &mut seen);
+    }
+    out.sort_by(|a, b| a.name.cmp(&b.name));
+    Ok(out)
+}
+
 #[tauri::command(rename_all = "camelCase")]
 pub async fn list_sessions(state: State<'_, AppState>) -> Result<Vec<SessionInfo>, AppError> {
     Ok(state.sessions.lock().await.list())

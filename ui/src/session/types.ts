@@ -197,3 +197,43 @@ export interface SshRecent {
   label: string;
   lastUsedMs: number;
 }
+
+export interface BrowserArtifact {
+  id: string;
+  sessionId: string;
+  at: number;
+  tabName?: string | null;
+  url?: string | null;
+  action?: string | null;
+  note?: string | null;
+  /** data URL or https URL */
+  imageUrl?: string | null;
+  rawDetail?: string | null;
+}
+
+export interface CompanionTarget {
+  id: string;
+  sessionId: string;
+  url: string;
+  title: string;
+  at: number;
+  source: string;
+}
+
+export interface SkillInfo {
+  name: string;
+  description: string;
+  path: string;
+  source: string;
+}
+
+export interface LaunchRecipe {
+  id: string;
+  group: string;
+  label: string;
+  detail: string;
+  keywords: string;
+  /** prompt sent to active session */
+  prompt: string;
+  openPanel?: "browser" | "companion" | "launch" | "plan" | "terminal";
+}

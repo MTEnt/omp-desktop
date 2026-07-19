@@ -6,6 +6,10 @@ import type {
   AvailableModel,
   ModelRoleAssignment,
   RemoteTarget,
+  SkillInfo,
+  LaunchRecipe,
+  CompanionTarget,
+  BrowserArtifact,
   SessionInfo,
   SubagentInfo,
   TodoPhase,
@@ -38,6 +42,17 @@ export interface SessionStore {
   setActive: (sessionId: string | null) => void;
   openFolder: (cwd?: string, resume?: string) => Promise<void>;
   openSshSession: (remote: RemoteTarget) => Promise<void>;
+  browserArtifacts: Record<string, BrowserArtifact[]>;
+  companions: Record<string, CompanionTarget[]>;
+  activeCompanionId: string | null;
+  skills: SkillInfo[];
+  skillsLoaded: boolean;
+  loadSkills: () => Promise<void>;
+  launchRecipe: (recipe: LaunchRecipe, vars?: Record<string, string>) => Promise<boolean>;
+  launchSkill: (skillName: string, args?: string) => Promise<boolean>;
+  launchBrowser: (url: string, headed?: boolean) => Promise<boolean>;
+  setActiveCompanion: (id: string | null) => void;
+  clearBrowserArtifacts: (sessionId?: string) => void;
   restartSession: (sessionId: string) => Promise<void>;
   closeSession: (sessionId: string) => Promise<void>;
   refreshState: (sessionId: string) => Promise<void>;
@@ -309,6 +324,252 @@ const toolIdentity = (
 
 const projectKeyFromCwd = (cwd: string) => cwd.replaceAll("\\", "/");
 
+
+const LOCALHOST_URL_RE =
+  /https?:\/\/(?:localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\])(?::\d+)?(?:\/[^\s"'<>]*)?/gi;
+
+const DATA_IMAGE_RE = /data:image\/[a-zA-Z0-9.+-]+;base64,[A-Za-z0-9+/=\s]+/g;
+
+
+const asString = (value: unknown): string | undefined =>
+  typeof value === "string" && value.trim() ? value : undefined;
+
+const collectBrowserArtifactsFromUnknown = (
+  value: unknown,
+  sessionId: string,
+  toolId: string,
+  at: number,
+  fallbackName?: string,
+): BrowserArtifact[] => {
+  const artifacts: BrowserArtifact[] = [];
+  const visit = (node: unknown, depth = 0) => {
+    if (node == null || depth > 6) return;
+    if (typeof node === "string") {
+      const matches = node.match(DATA_IMAGE_RE);
+      if (matches) {
+        for (const [index, imageUrl] of matches.entries()) {
+          artifacts.push({
+            id: `${toolId}-img-${index}-${at}`,
+            sessionId,
+            at,
+            tabName: fallbackName,
+            imageUrl: imageUrl.replace(/\s+/g, ""),
+            note: "screenshot",
+          });
+        }
+      }
+      return;
+    }
+    if (Array.isArray(node)) {
+      for (const item of node) visit(item, depth + 1);
+      return;
+    }
+    if (typeof node !== "object") return;
+    const rec = node as Record<string, unknown>;
+    const url = asString(rec.url) ?? asString(rec.pageUrl);
+    const tabName =
+      asString(rec.name) ?? asString(rec.tab) ?? asString(rec.tabName) ?? fallbackName;
+    const action = asString(rec.action);
+
+    const shots = rec.screenshots;
+    if (Array.isArray(shots)) {
+      shots.forEach((shot, index) => {
+        if (!shot || typeof shot !== "object") return;
+        const s = shot as Record<string, unknown>;
+        const imageUrl =
+          asString(s.dataUrl) ??
+          asString(s.data_url) ??
+          (asString(s.base64) ? `data:image/png;base64,${asString(s.base64)}` : undefined) ??
+          (asString(s.data) && String(s.data).startsWith("data:")
+            ? asString(s.data)
+            : asString(s.data)
+              ? `data:image/png;base64,${asString(s.data)}`
+              : undefined) ??
+          asString(s.url) ??
+          asString(s.path);
+        if (!imageUrl) return;
+        artifacts.push({
+          id: `${toolId}-shot-${index}-${at}`,
+          sessionId,
+          at,
+          tabName,
+          url,
+          action,
+          imageUrl,
+          note: asString(s.label) ?? "screenshot",
+        });
+      });
+    }
+
+    for (const key of ["screenshot", "image", "png", "imageBase64", "base64"]) {
+      const v = rec[key];
+      if (typeof v === "string" && v.length > 32) {
+        const imageUrl = v.startsWith("data:")
+          ? v
+          : key.toLowerCase().includes("base64") || /^[A-Za-z0-9+/=]+$/.test(v.slice(0, 80))
+            ? `data:image/png;base64,${v}`
+            : v.startsWith("http") || v.startsWith("/")
+              ? v
+              : undefined;
+        if (imageUrl) {
+          artifacts.push({
+            id: `${toolId}-${key}-${at}`,
+            sessionId,
+            at,
+            tabName,
+            url,
+            action,
+            imageUrl,
+            note: key,
+          });
+        }
+      }
+    }
+
+    if (action === "open" || url) {
+      artifacts.push({
+        id: `${toolId}-meta-${at}-${artifacts.length}`,
+        sessionId,
+        at,
+        tabName,
+        url,
+        action,
+        note: action ?? "browser",
+      });
+    }
+
+    for (const nested of Object.values(rec)) visit(nested, depth + 1);
+  };
+  visit(value);
+  const seen = new Set<string>();
+  return artifacts.filter((item) => {
+    const key = `${item.imageUrl ?? ""}|${item.url ?? ""}|${item.action ?? ""}|${item.note ?? ""}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return Boolean(item.imageUrl || item.url || item.action);
+  });
+};
+
+const extractCompanionsFromText = (
+  text: string,
+  sessionId: string,
+  source: string,
+  at: number,
+): CompanionTarget[] => {
+  if (!text) return [];
+  const matches = text.match(LOCALHOST_URL_RE) ?? [];
+  const seen = new Set<string>();
+  const out: CompanionTarget[] = [];
+  for (const url of matches) {
+    const clean = url.replace(/[),.;]+$/g, "");
+    if (seen.has(clean)) continue;
+    seen.add(clean);
+    let title = "Local companion";
+    try {
+      const parsed = new URL(clean);
+      title = `${parsed.hostname}${parsed.port ? `:${parsed.port}` : ""}${parsed.pathname === "/" ? "" : parsed.pathname}`;
+    } catch {
+      // keep default
+    }
+    out.push({
+      id: `${sessionId}-${clean}`,
+      sessionId,
+      url: clean,
+      title,
+      at,
+      source,
+    });
+  }
+  return out;
+};
+
+export const LAUNCH_RECIPES: LaunchRecipe[] = [
+  {
+    id: "brainstorm",
+    group: "Workflows",
+    label: "Start Superpowers brainstorm",
+    detail: "Design brainstorm with visual companion when useful",
+    keywords: "superpowers brainstorm design companion",
+    openPanel: "companion",
+    prompt: [
+      "Read skill://brainstorming and follow it fully.",
+      "Start a collaborative design brainstorm for: {{topic}}",
+      "If visual comparison helps, offer/start the visual companion and keep mockups updated.",
+      "Ask one clarifying question at a time. Do not implement code until I approve a design.",
+    ].join("\n"),
+  },
+  {
+    id: "impeccable-critique",
+    group: "Workflows",
+    label: "Impeccable critique",
+    detail: "Run design critique on the current UI surface",
+    keywords: "impeccable critique design review",
+    openPanel: "launch",
+    prompt: [
+      "Read skill://impeccable and follow setup.",
+      "Then read skill://impeccable/reference/critique.md and run a critique on: {{target}}",
+      "Score issues and propose concrete fixes. Do not rewrite the whole UI unless asked.",
+    ].join("\n"),
+  },
+  {
+    id: "impeccable-polish",
+    group: "Workflows",
+    label: "Impeccable polish",
+    detail: "Final craft pass on a page/component",
+    keywords: "impeccable polish ui craft",
+    openPanel: "launch",
+    prompt: [
+      "Read skill://impeccable and skill://impeccable/reference/polish.md.",
+      "Polish: {{target}}",
+      "Keep existing brand language; eliminate AI-slop patterns; verify contrast and spacing.",
+    ].join("\n"),
+  },
+  {
+    id: "browser-headless",
+    group: "Browser",
+    label: "Headless browser session",
+    detail: "Open URL with OMP browser tool and snapshot",
+    keywords: "browser headless playwright screenshot",
+    openPanel: "browser",
+    prompt: [
+      "Use the browser tool (headless) for this task.",
+      "1) browser open name=desktop url={{url}}",
+      "2) run a snapshot/observe and take a screenshot",
+      "3) summarize the page structure, key CTAs, and any obvious UX/a11y issues",
+      "Keep the tab named desktop open for follow-ups.",
+    ].join("\n"),
+  },
+  {
+    id: "browser-headed",
+    group: "Browser",
+    label: "Visible browser session",
+    detail: "Open a headed browser when possible and snapshot",
+    keywords: "browser headed visible ui",
+    openPanel: "browser",
+    prompt: [
+      "Use the browser tool. Prefer a visible/headed browser if settings allow; otherwise headless is fine.",
+      "Open name=desktop url={{url}}, observe the page, screenshot, and report what you see.",
+      "Leave the tab open for iterative interaction.",
+    ].join("\n"),
+  },
+  {
+    id: "browser-qa",
+    group: "Browser",
+    label: "Browser QA pass",
+    detail: "Click through critical path and report bugs",
+    keywords: "qa test crawl regression",
+    openPanel: "browser",
+    prompt: [
+      "Use the browser tool against {{url}} (tab name=desktop).",
+      "Perform a focused QA pass of the main user path described as: {{topic}}",
+      "Capture screenshots at key steps. Return bugs with severity, repro, and suggested fix.",
+    ].join("\n"),
+  },
+];
+
+const applyTemplate = (template: string, vars: Record<string, string> = {}) =>
+  template.replace(/\{\{(\w+)\}\}/g, (_, key: string) => vars[key] ?? `[${key}]`);
+
 export const useSessionStore = create<SessionStore>()((set, get) => ({
   settings: null,
   modelRoles: [],
@@ -324,6 +585,11 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
   states: {},
   error: null,
   streaming: {},
+  browserArtifacts: {},
+  companions: {},
+  activeCompanionId: null,
+  skills: [],
+  skillsLoaded: false,
   roleMemoryCache: {},
 
   bootstrap: async () => {
@@ -427,6 +693,8 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
         subagents: { ...state.subagents, [session.id]: [] },
         states: { ...state.states, [session.id]: {} },
         streaming: { ...state.streaming, [session.id]: false },
+        browserArtifacts: { ...state.browserArtifacts, [session.id]: [] },
+        companions: { ...state.companions, [session.id]: [] },
         error: null,
       }));
       void get().ensureRoleMemoryPreamble("default", session.cwd, session.id);
@@ -481,6 +749,8 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
         subagents: { ...state.subagents, [session.id]: [] },
         states: { ...state.states, [session.id]: {} },
         streaming: { ...state.streaming, [session.id]: false },
+        browserArtifacts: { ...state.browserArtifacts, [session.id]: [] },
+        companions: { ...state.companions, [session.id]: [] },
         error: null,
       }));
       void get().ensureRoleMemoryPreamble("default", session.cwd, session.id);
@@ -553,6 +823,8 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
         subagents: withoutSession(state.subagents, sessionId),
         states: withoutSession(state.states, sessionId),
         streaming: withoutSession(state.streaming, sessionId),
+        browserArtifacts: withoutSession(state.browserArtifacts, sessionId),
+        companions: withoutSession(state.companions, sessionId),
         error: null,
       };
     });
@@ -925,13 +1197,138 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
         );
       }
 
+      const at = Date.now();
+      let browserArtifacts = state.browserArtifacts[sessionId] ?? [];
+      let companions = state.companions[sessionId] ?? [];
+      let activeCompanionId = state.activeCompanionId;
+
+      if (isEnd) {
+        const blob = [
+          detail,
+          formatDetail(event.result),
+          formatDetail(event.details),
+          formatDetail(event.output),
+          formatDetail(event),
+        ].join("\n");
+
+
+        if (toolName.toLowerCase().includes("browser") || blob.includes("screenshot") || blob.includes("data:image")) {
+          const extracted = collectBrowserArtifactsFromUnknown(
+            {
+              details: event.details,
+              result: event.result,
+              output: event.output,
+              detail: event.detail,
+              raw: blob,
+            },
+            sessionId,
+            tool.id,
+            at,
+            toolName,
+          );
+          if (extracted.length) {
+            browserArtifacts = [...extracted, ...browserArtifacts].slice(0, 40);
+          }
+        }
+
+        const foundCompanions = extractCompanionsFromText(blob, sessionId, toolName, at);
+        if (foundCompanions.length) {
+          const existing = new Set(companions.map((item) => item.url));
+          const merged = [
+            ...foundCompanions.filter((item) => !existing.has(item.url)),
+            ...companions,
+          ].slice(0, 20);
+          companions = merged;
+          activeCompanionId = foundCompanions[0]?.id ?? activeCompanionId;
+          window.dispatchEvent(
+            new CustomEvent("omp-desktop:open-panel", { detail: "companion" }),
+          );
+        }
+      }
+
       return {
         transcripts: { ...state.transcripts, [sessionId]: nextTranscript },
         activity: { ...state.activity, [sessionId]: nextActivity },
+        browserArtifacts: { ...state.browserArtifacts, [sessionId]: browserArtifacts },
+        companions: { ...state.companions, [sessionId]: companions },
+        activeCompanionId,
       };
     });
   },
 
+
+
+  loadSkills: async () => {
+    try {
+      const skills = await api.listSkills();
+      set({ skills, skillsLoaded: true });
+    } catch (error) {
+      console.warn("Unable to list skills", error);
+      set({ skills: [], skillsLoaded: true });
+    }
+  },
+
+  setActiveCompanion: (id) => set({ activeCompanionId: id }),
+
+  clearBrowserArtifacts: (sessionId) => {
+    if (!sessionId) {
+      set({ browserArtifacts: {} });
+      return;
+    }
+    set((state) => {
+      const next = { ...state.browserArtifacts };
+      delete next[sessionId];
+      return { browserArtifacts: next };
+    });
+  },
+
+  launchRecipe: async (recipe, vars = {}) => {
+    const sessionId = get().activeSessionId;
+    if (!sessionId) {
+      set({ error: "Open a session before launching a workflow." });
+      return false;
+    }
+    const prompt = applyTemplate(recipe.prompt, {
+      topic: vars.topic ?? vars.target ?? "the current project",
+      target: vars.target ?? vars.topic ?? "the current UI",
+      url: vars.url ?? "http://localhost:5173",
+      ...vars,
+    });
+    const ok = await get().send(prompt);
+    if (ok && recipe.openPanel) {
+      window.dispatchEvent(
+        new CustomEvent("omp-desktop:open-panel", { detail: recipe.openPanel }),
+      );
+    }
+    return ok;
+  },
+
+  launchSkill: async (skillName, args = "") => {
+    const sessionId = get().activeSessionId;
+    if (!sessionId) {
+      set({ error: "Open a session before launching a skill." });
+      return false;
+    }
+    const prompt = [
+      `Read skill://${skillName} and follow it.`,
+      args.trim() ? `User request: ${args.trim()}` : "Proceed with the default flow for this skill.",
+    ].join("\n");
+    const ok = await get().send(prompt);
+    if (ok) {
+      window.dispatchEvent(
+        new CustomEvent("omp-desktop:open-panel", { detail: "launch" }),
+      );
+    }
+    return ok;
+  },
+
+  launchBrowser: async (url, headed = false) => {
+    const recipe = LAUNCH_RECIPES.find((item) =>
+      headed ? item.id === "browser-headed" : item.id === "browser-headless",
+    );
+    if (!recipe) return false;
+    return get().launchRecipe(recipe, { url });
+  },
 
   ensureRoleMemoryPreamble: async (role, cwd, sessionId) => {
     const projectKey = projectKeyFromCwd(cwd);

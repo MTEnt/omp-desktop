@@ -19,6 +19,9 @@ import { JobsPanel } from "../panels/jobs-panel.tsx";
 import { MemoryPanel } from "../panels/memory-panel.tsx";
 import { ScratchpadPanel } from "../panels/scratchpad-panel.tsx";
 import { TerminalPanel } from "../panels/terminal-panel.tsx";
+import { BrowserPanel } from "../panels/browser-panel.tsx";
+import { CompanionPanel } from "../panels/companion-panel.tsx";
+import { LaunchPanel } from "../panels/launch-panel.tsx";
 import { CommandPalette } from "./palette.tsx";
 import { PixelPieLogo } from "./pixel-pie-logo.tsx";
 import { RoleModelStrip } from "./role-model-picker.tsx";
@@ -37,9 +40,12 @@ const panelMeta: Record<PanelId, { label: string; eyebrow: string }> = {
   jobs: { label: "Job board", eyebrow: "Persistent work" },
   memory: { label: "Role memory", eyebrow: "Long-term" },
   scratchpad: { label: "Scratchpad", eyebrow: "Working notes" },
+  launch: { label: "Launch", eyebrow: "Recipes & skills" },
+  browser: { label: "Browser", eyebrow: "Headless / headed" },
+  companion: { label: "Companion", eyebrow: "Local servers" },
 };
 
-const rightPanels: PanelId[] = ["plan", "activity", "subagents", "jobs", "memory", "scratchpad"];
+const rightPanels: PanelId[] = ["plan", "activity", "subagents", "jobs", "memory", "scratchpad", "launch", "browser", "companion"];
 
 
 const SessionSidebar = () => {
@@ -151,6 +157,12 @@ const PanelBody = ({ panel }: { panel: PanelId }) => {
       return <ScratchpadPanel />;
     case "terminal":
       return <TerminalPanel />;
+    case "launch":
+      return <LaunchPanel />;
+    case "browser":
+      return <BrowserPanel />;
+    case "companion":
+      return <CompanionPanel />;
   }
 };
 
@@ -228,6 +240,21 @@ export const Shell = () => {
     const openSsh = () => setSshOpen(true);
     window.addEventListener("omp-desktop:open-ssh", openSsh);
     return () => window.removeEventListener("omp-desktop:open-ssh", openSsh);
+  }, []);
+
+  useEffect(() => {
+    const openDrawer = useLayoutStore.getState().openDrawer;
+    const onOpenPanel = (event: Event) => {
+      const detail = (event as CustomEvent<string>).detail;
+      if (!detail) return;
+      if (detail === "sessions") {
+        useLayoutStore.getState().setSessionsSidebarOpen(true);
+        return;
+      }
+      openDrawer(detail as import("./layout-store.ts").PanelId);
+    };
+    window.addEventListener("omp-desktop:open-panel", onOpenPanel);
+    return () => window.removeEventListener("omp-desktop:open-panel", onOpenPanel);
   }, []);
 
   useEffect(() => {

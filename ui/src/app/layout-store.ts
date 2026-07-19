@@ -10,7 +10,10 @@ export type PanelId =
   | "subagents"
   | "jobs"
   | "memory"
-  | "scratchpad";
+  | "scratchpad"
+  | "browser"
+  | "companion"
+  | "launch";
 
 interface LayoutStore {
   drawer: PanelId | null;
