@@ -5,6 +5,7 @@ import type {
   AppSettings,
   AvailableModel,
   ModelRoleAssignment,
+  RemoteTarget,
   SessionInfo,
   SubagentInfo,
   TodoPhase,
@@ -36,6 +37,7 @@ export interface SessionStore {
   bootstrap: () => Promise<void>;
   setActive: (sessionId: string | null) => void;
   openFolder: (cwd?: string, resume?: string) => Promise<void>;
+  openSshSession: (remote: RemoteTarget) => Promise<void>;
   restartSession: (sessionId: string) => Promise<void>;
   closeSession: (sessionId: string) => Promise<void>;
   refreshState: (sessionId: string) => Promise<void>;
@@ -433,6 +435,60 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
     }
   },
 
+  openSshSession: async (remote) => {
+    try {
+      const session = await api.createSshSession(remote);
+      const label = session.remote?.label ?? remote.hostName;
+      const remoteCwd = session.remote?.remoteCwd ?? remote.remoteCwd;
+      const hello = [
+        `Connected to remote **${label}**.`,
+        "",
+        `Remote folder: \`${remoteCwd}\``,
+        `Use OMP host \`${remote.hostName}\` and \`ssh://${remote.hostName}/...\` paths for remote files.`,
+      ].join("\n");
+      set((state) => ({
+        sessions: [
+          ...state.sessions.filter((candidate) => candidate.id !== session.id),
+          session,
+        ],
+        activeSessionId: session.id,
+        transcripts: {
+          ...state.transcripts,
+          [session.id]: [
+            {
+              id: `sys-remote-${session.id}`,
+              kind: "system",
+              text: hello,
+            },
+          ],
+        },
+        activity: {
+          ...state.activity,
+          [session.id]: [
+            {
+              id: `act-remote-${session.id}`,
+              at: Date.now(),
+              text: `SSH session ready · ${label}`,
+            },
+          ],
+        },
+        todos: { ...state.todos, [session.id]: [] },
+        subagents: { ...state.subagents, [session.id]: [] },
+        states: { ...state.states, [session.id]: {} },
+        streaming: { ...state.streaming, [session.id]: false },
+        error: null,
+      }));
+      void get().ensureRoleMemoryPreamble("default", session.cwd, session.id);
+    } catch (error) {
+      set({
+        error:
+          error instanceof Error
+            ? error.message
+            : `Unable to open SSH session: ${String(error)}`,
+      });
+    }
+  },
+
   restartSession: async (sessionId) => {
     const session = get().sessions.find((candidate) => candidate.id === sessionId);
     if (!session) {
@@ -441,10 +497,24 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
     }
 
     const cwd = session.cwd;
+    const remote = session.remote
+      ? {
+          hostName: session.remote.hostName,
+          host: session.remote.host,
+          user: session.remote.user ?? null,
+          port: session.remote.port ?? null,
+          keyPath: null,
+          remoteCwd: session.remote.remoteCwd,
+        }
+      : null;
     try {
       await get().closeSession(sessionId);
     } catch {
       // closeSession already surfaces non-fatal errors; continue restart.
+    }
+    if (remote) {
+      await get().openSshSession(remote);
+      return;
     }
     await get().openFolder(cwd);
   },

@@ -23,6 +23,7 @@ import { CommandPalette } from "./palette.tsx";
 import { PixelPieLogo } from "./pixel-pie-logo.tsx";
 import { RoleModelStrip } from "./role-model-picker.tsx";
 import { OnboardingWalkthrough } from "./onboarding-walkthrough.tsx";
+import { SshConnectModal } from "./ssh-connect-modal.tsx";
 import { TaskProgressStrip } from "./task-progress-strip.tsx";
 
 const panelMeta: Record<PanelId, { label: string; eyebrow: string }> = {
@@ -208,6 +209,7 @@ export const Shell = () => {
   const refreshState = useSessionStore((state) => state.refreshState);
   const openFolder = useSessionStore((state) => state.openFolder);
   const [paletteOpen, setPaletteOpen] = useState(false);
+  const [sshOpen, setSshOpen] = useState(false);
   const runtimeStatus = useMemo(
     () => readSessionRuntimeStatus(runtimeSnapshot),
     [runtimeSnapshot],
@@ -216,6 +218,12 @@ export const Shell = () => {
     ...(drawer ? [drawer] : ["chat" as const]),
     ...pinned,
   ];
+
+  useEffect(() => {
+    const openSsh = () => setSshOpen(true);
+    window.addEventListener("omp-desktop:open-ssh", openSsh);
+    return () => window.removeEventListener("omp-desktop:open-ssh", openSsh);
+  }, []);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -302,6 +310,14 @@ export const Shell = () => {
             Open folder
           </button>
           <button
+            className="topbar-open-folder"
+            type="button"
+            title="Connect via SSH"
+            onClick={() => setSshOpen(true)}
+          >
+            SSH
+          </button>
+          <button
             type="button"
             title="Command palette · ⌘K"
             aria-label="Open command palette"
@@ -380,6 +396,7 @@ export const Shell = () => {
       </div>
       <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} />
       <OnboardingWalkthrough />
+      <SshConnectModal open={sshOpen} onClose={() => setSshOpen(false)} />
     </div>
   );
 };

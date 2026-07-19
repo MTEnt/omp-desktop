@@ -2,6 +2,7 @@ use crate::error::{AppError, AppResult};
 use crate::memory;
 use crate::rpc::RpcClient;
 use crate::settings::{AppSettings, ApprovalMode};
+use crate::ssh::{self, RemoteSessionInfo, RemoteTarget};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use std::collections::HashMap;
@@ -18,6 +19,8 @@ pub struct SessionInfo {
     pub cwd: PathBuf,
     pub profile: Option<String>,
     pub status: SessionStatus,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub remote: Option<RemoteSessionInfo>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -55,24 +58,39 @@ impl SessionManager {
         &mut self,
         cwd: PathBuf,
         resume: Option<String>,
+        remote: Option<RemoteTarget>,
     ) -> AppResult<SessionInfo> {
         let id = Uuid::new_v4().to_string();
+        let mut session_cwd = cwd;
+        let mut remote_info = None;
+        if let Some(target) = remote.as_ref() {
+            let workspace = ssh::prepare_remote_workspace(&id, target)?;
+            session_cwd = workspace;
+            remote_info = Some(ssh::to_remote_session_info(target, Some(target.remote_cwd.clone())));
+        }
         let overlay_path = std::env::temp_dir().join(format!("omp-desktop-memory-{id}.yml"));
         memory::write_mnemopi_overlay(&overlay_path)?;
-        let args = build_omp_args(&cwd, &self.settings, resume.as_deref(), Some(&overlay_path));
+        let args = build_omp_args(&session_cwd, &self.settings, resume.as_deref(), Some(&overlay_path));
         let rpc = RpcClient::spawn(&self.omp_bin, &args).await?;
         rpc.wait_ready(Duration::from_secs(30)).await?;
 
-        let info = SessionInfo {
-            id: id.clone(),
-            title: cwd
+        let title = if let Some(remote) = &remote_info {
+            remote.label.clone()
+        } else {
+            session_cwd
                 .file_name()
                 .and_then(|name| name.to_str())
                 .unwrap_or("session")
-                .into(),
-            cwd,
+                .into()
+        };
+
+        let info = SessionInfo {
+            id: id.clone(),
+            title,
+            cwd: session_cwd,
             profile: self.settings.default_profile.clone(),
             status: SessionStatus::Ready,
+            remote: remote_info,
         };
         self.tabs.insert(
             id,
@@ -252,6 +270,7 @@ mod tests {
             cwd: PathBuf::from("/tmp/project"),
             profile: None,
             status: SessionStatus::Ready,
+            remote: None,
         };
 
         assert_eq!(
@@ -317,7 +336,7 @@ input.on("line", (line) => {
         manager.set_settings(settings);
 
         let info = manager
-            .create_session(cwd.clone(), Some("previous-session".into()))
+            .create_session(cwd.clone(), Some("previous-session".into()), None)
             .await
             .unwrap();
 

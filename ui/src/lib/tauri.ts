@@ -6,6 +6,9 @@ import type {
   AppSettings,
   SetupStatus,
   AvailableModel,
+  RemoteTarget,
+  SshHostInfo,
+  SshProbeResult,
   JobCard,
   ModelRolesSnapshot,
   PersistentAgent,
@@ -51,8 +54,37 @@ export const api = {
 
   listSessions: () => invoke<SessionInfo[]>("list_sessions"),
 
-  createSession: (cwd: string, resume?: string) =>
-    invoke<SessionInfo>("create_session", { cwd, resume: resume ?? null }),
+  createSession: (cwd: string, resume?: string, remote?: RemoteTarget | null) =>
+    invoke<SessionInfo>("create_session", {
+      cwd,
+      resume: resume ?? null,
+      remote: remote ?? null,
+    }),
+
+  listSshHosts: () => invoke<SshHostInfo[]>("list_ssh_hosts"),
+
+  addSshHost: (input: {
+    name: string;
+    host: string;
+    user?: string | null;
+    port?: number | null;
+    keyPath?: string | null;
+    description?: string | null;
+  }) =>
+    invoke<SshHostInfo>("add_ssh_host", {
+      name: input.name,
+      host: input.host,
+      user: input.user ?? null,
+      port: input.port ?? null,
+      keyPath: input.keyPath ?? null,
+      description: input.description ?? null,
+    }),
+
+  testSshConnection: (remote: RemoteTarget) =>
+    invoke<SshProbeResult>("test_ssh_connection", { remote }),
+
+  createSshSession: (remote: RemoteTarget) =>
+    invoke<SessionInfo>("create_ssh_session", { remote }),
 
   closeSession: (sessionId: string) =>
     invoke<void>("close_session", { sessionId }),

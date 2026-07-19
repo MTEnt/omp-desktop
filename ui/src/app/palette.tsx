@@ -190,6 +190,16 @@ export const CommandPalette = ({ open, onOpenChange }: CommandPaletteProps) => {
             : toggleDrawer(panel.id),
       })),
       {
+        id: "ssh-connect",
+        group: "Session",
+        label: "Connect via SSH",
+        detail: "Open a remote folder over SSH",
+        keywords: "remote host server ssh folder",
+        run: () => {
+          window.dispatchEvent(new Event("omp-desktop:open-ssh"));
+        },
+      },
+      {
         id: "open-settings",
         group: "Preferences",
         label: "Open settings",

@@ -3204,3 +3204,144 @@ button:disabled {
     flex: 1 1 auto;
   }
 }
+
+
+/* —— SSH connect modal —— */
+.ssh-modal__card {
+  width: min(880px, 100%);
+}
+
+.ssh-modal__grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr);
+  gap: 16px;
+}
+
+.ssh-modal__section-head,
+.ssh-modal__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.ssh-modal__section-head h2,
+.ssh-modal__details h2 {
+  margin: 0;
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #8b9bb4;
+}
+
+.ssh-modal__row {
+  align-items: stretch;
+}
+
+.ssh-modal__row .onboard-field {
+  flex: 1 1 0;
+}
+
+.ssh-host-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+  max-height: 340px;
+  overflow: auto;
+}
+
+.ssh-host {
+  all: unset;
+  box-sizing: border-box;
+  display: grid;
+  gap: 2px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid #243041;
+  background: #121924;
+  cursor: pointer;
+  color: #d5deec;
+}
+
+.ssh-host strong {
+  font-size: 13px;
+  color: #eef3fb;
+}
+
+.ssh-host span {
+  font-size: 12px;
+  color: #9aabc2;
+}
+
+.ssh-host em {
+  font-size: 11px;
+  color: #6f7f96;
+  font-style: normal;
+}
+
+.ssh-host:hover,
+.ssh-host:focus-visible {
+  border-color: #3d7eff88;
+}
+
+.ssh-host.is-active {
+  border-color: color-mix(in srgb, #3d7eff 55%, #243041);
+  background: #152033;
+}
+
+.ssh-modal__add,
+.ssh-modal__details {
+  display: grid;
+  gap: 10px;
+}
+
+.ssh-modal__summary {
+  display: grid;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid #243041;
+  background: #121924;
+  color: #e7eef8;
+  font-size: 13px;
+}
+
+.ssh-probe {
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  font-size: 12.5px;
+}
+
+.ssh-probe.is-ok {
+  background: color-mix(in srgb, #163528 80%, transparent);
+  color: #b6ebcf;
+  border: 1px solid #3dd68c55;
+}
+
+.ssh-probe.is-bad {
+  background: color-mix(in srgb, #3a1717 80%, transparent);
+  color: #ffb4b4;
+  border: 1px solid #ff8e8e55;
+}
+
+.session-row__remote {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #9ec1ff;
+  background: #152033;
+  border: 1px solid #3d7eff55;
+}
+
+@media (max-width: 800px) {
+  .ssh-modal__grid {
+    grid-template-columns: 1fr;
+  }
+}

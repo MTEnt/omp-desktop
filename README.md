@@ -16,6 +16,17 @@ Zen-default UI with expandable panels, multi-tab `omp --mode rpc` sessions, live
 
 ![Home](docs/screenshots/home.png)
 
+## Connect via SSH
+
+Use **SSH** in the top bar (or Sessions panel / command palette → “Connect via SSH”):
+
+1. Pick a host from `~/.ssh/config` or OMP `~/.omp/agent/ssh.json`
+2. Optionally add a host
+3. Enter the remote folder (`~` or `/path`)
+4. **Test connection**, then **Connect**
+
+Creates a session labeled `user@host:path`. The agent is primed to use OMP SSH hosts and `ssh://` paths. Local integrated terminal remains local in v1.
+
 ## First-launch walkthrough
 
 On first launch, OMP Desktop opens a short setup:

@@ -7,6 +7,7 @@ mod rpc;
 mod session;
 mod session_history;
 mod settings;
+mod ssh;
 
 use tauri::Manager;
 
@@ -37,6 +38,10 @@ pub fn run() {
             commands::install_impeccable,
             commands::list_sessions,
             commands::create_session,
+            commands::create_ssh_session,
+            commands::test_ssh_connection,
+            commands::add_ssh_host,
+            commands::list_ssh_hosts,
             commands::close_session,
             commands::open_pty,
             commands::write_pty,

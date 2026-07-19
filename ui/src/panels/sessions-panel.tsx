@@ -46,6 +46,13 @@ export const SessionsPanel = () => {
         >
           {isOpening ? "Opening…" : "New session"}
         </button>
+        <button
+          type="button"
+          className="panel-button"
+          onClick={() => window.dispatchEvent(new Event("omp-desktop:open-ssh"))}
+        >
+          SSH
+        </button>
       </div>
 
       <form className="resume-form" onSubmit={(event) => void resumeSession(event)}>
@@ -90,8 +97,8 @@ export const SessionsPanel = () => {
                 >
                   <span className={`status-dot status-dot--${session.status}`} />
                   <span className="session-row__copy">
-                    <strong>{session.title}</strong>
-                    <small>{session.cwd}</small>
+                    <strong>{session.title}{session.remote ? " ↗" : ""}</strong>
+                    <small>{session.remote?.label ?? session.cwd}</small>
                   </span>
                 </button>
                 <span className="session-row__status">
@@ -100,8 +107,8 @@ export const SessionsPanel = () => {
                 <button
                   type="button"
                   className="session-row__close"
-                  title={`Close ${session.title}`}
-                  aria-label={`Close ${session.title}`}
+                  title={`Close ${session.title}{session.remote ? " ↗" : ""}`}
+                  aria-label={`Close ${session.title}{session.remote ? " ↗" : ""}`}
                   onClick={() => void closeSession(session.id)}
                 >
                   <svg viewBox="0 0 16 16" aria-hidden="true">

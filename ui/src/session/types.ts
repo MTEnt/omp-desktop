@@ -2,12 +2,48 @@ export type ApprovalMode = "yolo" | "write" | "alwaysAsk";
 
 export type SessionStatus = "starting" | "ready" | "error" | "exited";
 
+export interface RemoteSessionInfo {
+  hostName: string;
+  host: string;
+  user?: string | null;
+  port?: number | null;
+  remoteCwd: string;
+  label: string;
+}
+
 export interface SessionInfo {
   id: string;
   title: string;
   cwd: string;
   profile?: string | null;
   status: SessionStatus;
+  remote?: RemoteSessionInfo | null;
+}
+
+export interface SshHostInfo {
+  name: string;
+  host: string;
+  user?: string | null;
+  port?: number | null;
+  keyPath?: string | null;
+  description?: string | null;
+  source: string;
+  scope?: string | null;
+}
+
+export interface RemoteTarget {
+  hostName: string;
+  host: string;
+  user?: string | null;
+  port?: number | null;
+  keyPath?: string | null;
+  remoteCwd: string;
+}
+
+export interface SshProbeResult {
+  ok: boolean;
+  message: string;
+  remoteCwd?: string | null;
 }
 
 export interface AppSettings {

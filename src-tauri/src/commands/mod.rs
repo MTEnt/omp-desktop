@@ -5,6 +5,7 @@ use crate::pty::{PtyManager, PtyOutput};
 use crate::session::{SessionInfo, SessionManager};
 use crate::session_history;
 use crate::settings::{self, AppSettings};
+use crate::ssh::{self, RemoteTarget, SshHostInfo, SshProbeResult};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::fs;
@@ -312,9 +313,12 @@ pub async fn create_session(
     state: State<'_, AppState>,
     cwd: String,
     resume: Option<String>,
+    remote: Option<RemoteTarget>,
 ) -> Result<SessionInfo, AppError> {
     let mut sessions = state.sessions.lock().await;
-    let info = sessions.create_session(PathBuf::from(cwd), resume).await?;
+    let info = sessions
+        .create_session(PathBuf::from(cwd), resume, remote)
+        .await?;
     let mut events = sessions.take_events(&info.id).ok_or_else(|| {
         AppError::Msg(format!(
             "event receiver unavailable for session {}",
@@ -351,6 +355,117 @@ pub async fn create_session(
             );
         }
         let _ = event_app.emit("omp-session-exit", session_id);
+    });
+
+    Ok(info)
+}
+
+
+#[tauri::command(rename_all = "camelCase")]
+pub async fn list_ssh_hosts(state: State<'_, AppState>) -> Result<Vec<SshHostInfo>, AppError> {
+    let settings = state.settings.lock().await.clone();
+    let omp = omp_binary_or_fallback(&settings);
+    ssh::list_hosts(&omp)
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub async fn add_ssh_host(
+    name: String,
+    host: String,
+    user: Option<String>,
+    port: Option<u16>,
+    key_path: Option<String>,
+    description: Option<String>,
+) -> Result<SshHostInfo, AppError> {
+    ssh::add_user_host(
+        &name,
+        &host,
+        user.as_deref(),
+        port,
+        key_path.as_deref(),
+        description.as_deref(),
+    )
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub async fn test_ssh_connection(remote: RemoteTarget) -> Result<SshProbeResult, AppError> {
+    // Run blocking ssh probe off the async runtime.
+    tokio::task::spawn_blocking(move || ssh::probe_connection(&remote))
+        .await
+        .map_err(|e| AppError::Msg(format!("ssh probe join error: {e}")))?
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub async fn create_ssh_session(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    remote: RemoteTarget,
+) -> Result<SessionInfo, AppError> {
+    // Probe first so we fail fast with a clear error.
+    let probe = {
+        let remote = remote.clone();
+        tokio::task::spawn_blocking(move || ssh::probe_connection(&remote))
+            .await
+            .map_err(|e| AppError::Msg(format!("ssh probe join error: {e}")))??
+    };
+    if !probe.ok {
+        return Err(AppError::Msg(format!("SSH connection failed: {}", probe.message)));
+    }
+
+    let mut target = remote;
+    if let Some(cwd) = probe.remote_cwd {
+        target.remote_cwd = cwd;
+    }
+
+    // Local cwd is a generated workspace stub; remote work uses ssh:// + OMP hosts.
+    let local_placeholder = dirs::home_dir()
+        .unwrap_or_else(|| PathBuf::from("/tmp"))
+        .display()
+        .to_string();
+
+    let mut sessions = state.sessions.lock().await;
+    let info = sessions
+        .create_session(PathBuf::from(local_placeholder), None, Some(target.clone()))
+        .await?;
+    let mut events = sessions.take_events(&info.id).ok_or_else(|| {
+        AppError::Msg(format!(
+            "event receiver unavailable for session {}",
+            info.id
+        ))
+    })?;
+    drop(sessions);
+
+    {
+        let memory = state.memory.lock().await;
+        let project = PathBuf::from(&info.cwd);
+        let key = memory::project_key(&project);
+        let label = info
+            .remote
+            .as_ref()
+            .map(|r| r.label.clone())
+            .unwrap_or_else(|| memory::project_label(&project));
+        let _ = memory.ensure_role_roster(&key, &label);
+        let _ = memory.ensure_default_agent_for_session(
+            &info.id,
+            &key,
+            &label,
+            "default",
+        );
+    }
+
+    let app_handle = app.clone();
+    let session_id = info.id.clone();
+    tokio::spawn(async move {
+        while let Some(event) = events.recv().await {
+            let _ = app_handle.emit(
+                "omp-event",
+                SessionEventEnvelope {
+                    session_id: session_id.clone(),
+                    event,
+                },
+            );
+        }
+        let _ = app_handle.emit("omp-session-exit", session_id);
     });
 
     Ok(info)
