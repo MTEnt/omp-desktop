@@ -33,7 +33,7 @@ const panelMeta: Record<PanelId, { label: string; eyebrow: string }> = {
   sessions: { label: "Sessions", eyebrow: "Workspace" },
   project: { label: "Project", eyebrow: "Context" },
   settings: { label: "Settings", eyebrow: "Preferences" },
-  terminal: { label: "Terminal", eyebrow: "Local shell" },
+  terminal: { label: "Terminal", eyebrow: "Shell" },
   plan: { label: "Plan", eyebrow: "Execution" },
   activity: { label: "Activity", eyebrow: "Timeline" },
   subagents: { label: "Subagents", eyebrow: "Delegation" },

@@ -57,7 +57,7 @@ impl PtyManager {
         if let Some(target) = remote {
             return self.open_remote_pty(session_id, target, on_output);
         }
-        let shell = shell_from_env(std::env::var_os("SHELL"));
+        let shell = local_shell();
         self.open_pty_with_shell(session_id, cwd, &shell, on_output)
     }
 
@@ -278,6 +278,36 @@ fn shell_single_quote(value: &str) -> String {
     format!("'{}'", value.replace('\'', r#"'\''"#))
 }
 
+fn local_shell() -> PathBuf {
+    #[cfg(windows)]
+    {
+        // Prefer an interactive PowerShell when available.
+        if let Some(shell) = std::env::var_os("COMSPEC") {
+            if !shell.is_empty() {
+                // COMSPEC is usually cmd.exe; still allow PWSH override.
+                if let Ok(pwsh) = which::which("pwsh") {
+                    return pwsh;
+                }
+                if let Ok(powershell) = which::which("powershell") {
+                    return powershell;
+                }
+                return PathBuf::from(shell);
+            }
+        }
+        if let Ok(pwsh) = which::which("pwsh") {
+            return pwsh;
+        }
+        if let Ok(powershell) = which::which("powershell") {
+            return powershell;
+        }
+        return fallback_shell();
+    }
+    #[cfg(not(windows))]
+    {
+        shell_from_env(std::env::var_os("SHELL"))
+    }
+}
+
 fn shell_from_env(shell: Option<OsString>) -> PathBuf {
     shell
         .filter(|value| !value.is_empty())
@@ -297,7 +327,10 @@ fn fallback_shell() -> PathBuf {
 
 #[cfg(windows)]
 fn fallback_shell() -> PathBuf {
-    PathBuf::from("cmd.exe")
+    std::env::var_os("COMSPEC")
+        .filter(|value| !value.is_empty())
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("cmd.exe"))
 }
 
 #[cfg(test)]

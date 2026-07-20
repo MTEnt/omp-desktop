@@ -89,13 +89,42 @@ pub fn resolve_omp_binary(settings: &AppSettings) -> AppResult<PathBuf> {
         if path.is_file() {
             return Ok(path);
         }
+        // Windows users often pass a path without the .cmd/.exe suffix.
+        #[cfg(windows)]
+        {
+            for ext in [".cmd", ".exe", ".bat"] {
+                let candidate = PathBuf::from(format!("{}{ext}", path.display()));
+                if candidate.is_file() {
+                    return Ok(candidate);
+                }
+            }
+        }
         return Err(AppError::Msg(format!(
             "omp binary not found at {}",
             path.display()
         )));
     }
-    which::which("omp")
-        .map_err(|_| AppError::Msg("omp not found on PATH; set omp binary path in Settings".into()))
+
+    which_omp().map_err(|_| {
+        AppError::Msg("omp not found on PATH; set omp binary path in Settings".into())
+    })
+}
+
+fn which_omp() -> Result<PathBuf, which::Error> {
+    // Prefer platform-native shims first on Windows.
+    #[cfg(windows)]
+    {
+        for name in ["omp.cmd", "omp.exe", "omp.bat", "omp"] {
+            if let Ok(path) = which::which(name) {
+                return Ok(path);
+            }
+        }
+        return Err(which::Error::CannotFindBinaryPath);
+    }
+    #[cfg(not(windows))]
+    {
+        which::which("omp")
+    }
 }
 
 pub fn default_config_dir() -> AppResult<PathBuf> {

@@ -191,6 +191,28 @@ pub async fn get_setup_status(state: State<'_, AppState>) -> Result<SetupStatus,
     })
 }
 
+
+fn run_npx(args: &[&str]) -> std::io::Result<std::process::ExitStatus> {
+    #[cfg(windows)]
+    {
+        // npx is typically a .cmd shim; run through cmd.exe for CreateProcess compatibility.
+        let mut command = std::process::Command::new("cmd");
+        command.arg("/C").arg("npx");
+        for arg in args {
+            command.arg(arg);
+        }
+        return command.status();
+    }
+    #[cfg(not(windows))]
+    {
+        let mut command = std::process::Command::new("npx");
+        for arg in args {
+            command.arg(arg);
+        }
+        command.status()
+    }
+}
+
 #[tauri::command(rename_all = "camelCase")]
 pub async fn install_impeccable() -> Result<SetupStatus, AppError> {
     let home = home_dir().ok_or_else(|| AppError::Msg("home directory unavailable".into()))?;
@@ -201,18 +223,16 @@ pub async fn install_impeccable() -> Result<SetupStatus, AppError> {
     let agents_rules = home.join(".agents/rules");
 
     if !agents_skill.join("SKILL.md").is_file() {
-        let status = std::process::Command::new("npx")
-            .args([
-                "--yes",
-                "impeccable@latest",
-                "install",
-                "--yes",
-                "--scope=global",
-                "--providers=agents,claude",
-                "--no-hooks",
-            ])
-            .status()
-            .map_err(|error| AppError::Msg(format!("failed to run npx impeccable: {error}")))?;
+        let status = run_npx(&[
+            "--yes",
+            "impeccable@latest",
+            "install",
+            "--yes",
+            "--scope=global",
+            "--providers=agents,claude",
+            "--no-hooks",
+        ])
+        .map_err(|error| AppError::Msg(format!("failed to run npx impeccable: {error}")))?;
         if !status.success() {
             return Err(AppError::Msg(
                 "impeccable install failed — ensure Node.js/npm are installed and network is available"

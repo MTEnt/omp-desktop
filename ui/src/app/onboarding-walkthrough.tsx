@@ -277,7 +277,7 @@ export const OnboardingWalkthrough = () => {
                 <p className="onboard-muted">Detected: {status.ompPath}</p>
               ) : (
                 <p className="onboard-muted">
-                  Install OMP globally (`bun install -g @oh-my-pi/pi-coding-agent` or your usual path), then refresh.
+                  Install OMP globally (`npm/bun install -g @oh-my-pi/pi-coding-agent` or your usual path), then refresh.
                 </p>
               )}
               <label className="onboard-field">
