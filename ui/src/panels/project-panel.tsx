@@ -71,6 +71,19 @@ export const ProjectPanel = () => {
     ? `${activeSession.id}\0${activeSession.cwd}\0${activeSession.remote?.remoteCwd ?? ""}`
     : "";
 
+  const relativeCrumb = useMemo(() => {
+    if (!activeSession) return ".";
+    const root = activeSession.remote
+      ? activeSession.remote.remoteCwd
+      : activeSession.cwd;
+    const norm = (p: string) => p.replace(/\\/g, "/").replace(/\/+$/, "");
+    const r = norm(root);
+    const c = norm(browsePath || root);
+    if (c === r) return ".";
+    if (c.startsWith(`${r}/`)) return c.slice(r.length + 1);
+    return browsePath || ".";
+  }, [activeSession, browsePath]);
+
   // Reset browser when session identity / cwd changes.
   useEffect(() => {
     if (!activeSession) {
@@ -251,17 +264,6 @@ export const ProjectPanel = () => {
     }
   };
 
-  const relativeCrumb = useMemo(() => {
-    const root = activeSession.remote
-      ? activeSession.remote.remoteCwd
-      : activeSession.cwd;
-    const norm = (p: string) => p.replace(/\\/g, "/").replace(/\/+$/, "");
-    const r = norm(root);
-    const c = norm(browsePath || root);
-    if (c === r) return ".";
-    if (c.startsWith(`${r}/`)) return c.slice(r.length + 1);
-    return browsePath || ".";
-  }, [activeSession, browsePath]);
 
   return (
     <div className="project-panel">
