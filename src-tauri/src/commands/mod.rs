@@ -4,6 +4,7 @@ use crate::omp_config::{self, AvailableModel, ModelRolesSnapshot};
 use crate::pty::{PtyManager, PtyOutput};
 use crate::session::{SessionInfo, SessionManager};
 use crate::session_history;
+use crate::session_library::{self, HistoricSessionSummary, SessionSearchHit};
 use crate::settings::{self, AppSettings};
 use crate::ssh::{self, RemoteDirListing, RemoteTarget, SshHostInfo, SshProbeResult, SshRecent};
 use serde::{Deserialize, Serialize};
@@ -923,6 +924,51 @@ pub async fn post_turn_housekeeping(
         );
     }
     Ok(())
+}
+
+fn default_session_library_paths() -> Result<session_library::SessionLibraryPaths, AppError> {
+    session_library::SessionLibraryPaths::from_dirs_home()
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub async fn list_historic_sessions(
+    include_archived: bool,
+) -> Result<Vec<HistoricSessionSummary>, AppError> {
+    let paths = default_session_library_paths()?;
+    session_library::list_sessions(&paths, include_archived, None)
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub async fn search_historic_sessions(
+    query: String,
+    limit: Option<usize>,
+) -> Result<Vec<SessionSearchHit>, AppError> {
+    let paths = default_session_library_paths()?;
+    session_library::search_sessions(&paths, &query, limit)
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub async fn archive_historic_session(path: String) -> Result<(), AppError> {
+    let paths = default_session_library_paths()?;
+    session_library::archive_session(&paths, &path)
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub async fn unarchive_historic_session(path: String) -> Result<(), AppError> {
+    let paths = default_session_library_paths()?;
+    session_library::unarchive_session(&paths, &path)
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub async fn delete_historic_session(path: String) -> Result<(), AppError> {
+    let paths = default_session_library_paths()?;
+    session_library::delete_session(&paths, &path)
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub async fn rename_historic_session(path: String, title: String) -> Result<(), AppError> {
+    let paths = default_session_library_paths()?;
+    session_library::rename_session(&paths, &path, &title)
 }
 
 #[cfg(test)]

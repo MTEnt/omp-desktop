@@ -8,6 +8,7 @@ mod rpc;
 mod session;
 mod session_history;
 mod settings;
+mod session_library;
 mod ssh;
 
 use tauri::Manager;
@@ -82,6 +83,12 @@ pub fn run() {
             commands::add_role_note,
             commands::list_role_notes,
             commands::rewrite_assistant_message,
+            commands::list_historic_sessions,
+            commands::search_historic_sessions,
+            commands::archive_historic_session,
+            commands::unarchive_historic_session,
+            commands::delete_historic_session,
+            commands::rename_historic_session,
         ])
         .run(tauri::generate_context!())
         .unwrap_or_else(|error| eprintln!("OMP Desktop runtime error: {error}"));
