@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { beforeEach, describe, it } from "node:test";
 
-import { useLayoutStore } from "../src/app/layout-store.ts";
+import { LAYOUT_STORAGE_KEY, useLayoutStore } from "../src/app/layout-store.ts";
 import {
   normalizeLocalCompanionUrl,
   parseSessionStats,
@@ -15,7 +15,10 @@ import {
 import { api } from "../src/lib/tauri.ts";
 
 beforeEach(() => {
-  useLayoutStore.setState({ drawer: null, pinned: [] });
+  useLayoutStore.setState({ drawer: null, pinned: [], sessionsSidebarOpen: false });
+  if (typeof localStorage !== "undefined") {
+    localStorage.removeItem(LAYOUT_STORAGE_KEY);
+  }
   useSessionStore.setState({
     settings: null,
     sessions: [
