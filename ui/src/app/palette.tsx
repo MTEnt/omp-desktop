@@ -32,6 +32,7 @@ const panelActions: Array<{ id: PanelId; label: string }> = [
   { id: "project", label: "Project" },
   { id: "plan", label: "Plan" },
   { id: "activity", label: "Activity" },
+  { id: "attention", label: "Attention" },
   { id: "subagents", label: "Subagents" },
   { id: "jobs", label: "Job board" },
   { id: "memory", label: "Role memory" },

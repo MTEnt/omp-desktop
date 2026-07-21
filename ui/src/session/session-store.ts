@@ -23,6 +23,10 @@ import type {
   TodoPhase,
   TranscriptItem,
 } from "./types.ts";
+import {
+  buildAttentionInbox,
+  type AttentionItem,
+} from "./attention.ts";
 
 type OmpEvent = Record<string, unknown>;
 
@@ -142,6 +146,12 @@ export const selectIsActiveStreaming = (state: SessionStore): boolean =>
   state.activeSessionId
     ? state.streaming[state.activeSessionId] === true
     : false;
+
+export const selectAttentionInbox = (state: SessionStore): AttentionItem[] =>
+  buildAttentionInbox({
+    sessions: state.sessions,
+    extensionUiRequests: state.extensionUiRequests,
+  });
 
 const isRecord = (value: unknown): value is OmpEvent =>
   typeof value === "object" && value !== null && !Array.isArray(value);

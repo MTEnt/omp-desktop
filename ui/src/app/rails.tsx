@@ -28,6 +28,7 @@ const leftItems: RailItem[] = [
 const rightItems: RailItem[] = [
   { id: "plan", label: "Plan", shortcut: "⌘4" },
   { id: "activity", label: "Activity", shortcut: "⌘5" },
+  { id: "attention", label: "Attention", shortcut: "⌘0" },
   { id: "subagents", label: "Subagents", shortcut: "⌘6" },
   { id: "jobs", label: "Job board", shortcut: "⌘7" },
   { id: "memory", label: "Role memory", shortcut: "⌘8" },
@@ -81,6 +82,14 @@ const Icon = ({ target }: { target: RailTarget }) => {
       break;
     case "activity":
       shape = <path d="M3 12h4l2.2-6 4 12 2.2-6H21" />;
+      break;
+    case "attention":
+      shape = (
+        <>
+          <path d="M12 4.5 13.8 9h4.7l-3.8 2.9 1.4 4.6L12 13.8 7.9 16.5l1.4-4.6L5.5 9h4.7z" />
+          <circle cx="18.5" cy="6.5" r="2.2" />
+        </>
+      );
       break;
     case "subagents":
       shape = (

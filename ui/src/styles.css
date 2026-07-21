@@ -1846,6 +1846,119 @@ button:disabled {
   font-size: 8px;
 }
 
+.attention-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.attention-panel__header {
+  color: var(--ink-faint);
+  font-family: "SFMono-Regular", Menlo, monospace;
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.attention-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.attention-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+  align-items: stretch;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: rgba(18, 22, 28, 0.9);
+}
+
+.attention-row__body {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.attention-row__badge {
+  width: fit-content;
+  padding: 2px 6px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--ink-muted);
+  font-family: "SFMono-Regular", Menlo, monospace;
+  font-size: 9px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.attention-row__badge--approval,
+.attention-row__badge--confirmation {
+  border-color: rgba(232, 176, 88, 0.45);
+  color: var(--gold);
+}
+
+.attention-row__badge--question,
+.attention-row__badge--input {
+  border-color: rgba(110, 168, 254, 0.4);
+  color: #8bbcff;
+}
+
+.attention-row__badge--plan {
+  border-color: rgba(148, 163, 184, 0.45);
+  color: #cbd5e1;
+}
+
+.attention-row__badge--failed {
+  border-color: rgba(248, 113, 113, 0.45);
+  color: #f87171;
+}
+
+.attention-row__session {
+  color: var(--ink-faint);
+  font-size: 10px;
+}
+
+.attention-row__title {
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.attention-row__detail {
+  color: var(--ink-muted);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.attention-row__open {
+  align-self: center;
+  padding: 6px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--ink);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.attention-row__open:hover,
+.attention-row__body:hover .attention-row__title {
+  color: var(--accent);
+}
+
 .subagent-list {
   display: flex;
   flex-direction: column;
