@@ -48,7 +48,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
-          shared-key: ${{ runner.os }}-${{ matrix.rust-targets }}
+          shared-key: ${{ matrix.artifact-name }}
 
       - name: Install root dependencies
         run: npm ci --ignore-scripts

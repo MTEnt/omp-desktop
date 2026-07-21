@@ -299,7 +299,7 @@ fn local_shell() -> PathBuf {
                 if let Ok(powershell) = which::which("powershell") {
                     return powershell;
                 }
-                return PathBuf::from(shell);
+                return shell_from_env(Some(shell));
             }
         }
         if let Ok(pwsh) = which::which("pwsh") {
@@ -308,7 +308,7 @@ fn local_shell() -> PathBuf {
         if let Ok(powershell) = which::which("powershell") {
             return powershell;
         }
-        return fallback_shell();
+        return shell_from_env(None);
     }
     #[cfg(not(windows))]
     {
@@ -345,7 +345,7 @@ fn fallback_shell() -> PathBuf {
 mod tests {
     #[cfg(unix)]
     use super::PtyManager;
-    use super::{shell_from_env, PtyOutput};
+    use super::{fallback_shell, shell_from_env, PtyOutput};
     use std::ffi::OsString;
     #[cfg(unix)]
     use std::path::Path;
@@ -426,16 +426,5 @@ mod tests {
         manager.close_pty("session-1").unwrap();
         assert!(manager.write_pty("session-1", "echo closed\n").is_err());
         std::fs::remove_dir(cwd).unwrap();
-    }
-
-    fn fallback_shell() -> PathBuf {
-        #[cfg(target_os = "macos")]
-        return PathBuf::from("/bin/zsh");
-
-        #[cfg(all(unix, not(target_os = "macos")))]
-        return PathBuf::from("/bin/sh");
-
-        #[cfg(windows)]
-        return PathBuf::from("cmd.exe");
     }
 }
