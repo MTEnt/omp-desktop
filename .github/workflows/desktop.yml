@@ -44,6 +44,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: 1.97.1
+          components: clippy
           targets: ${{ matrix.rust-targets }}
 
       - uses: Swatinem/rust-cache@v2
