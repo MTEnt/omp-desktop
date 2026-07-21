@@ -4473,3 +4473,25 @@ button:disabled {
   width: min(100%, 820px);
   flex: 0 0 auto;
 }
+
+/* —— App context menu —— */
+.app-context-menu {
+  position: fixed;
+  z-index: 400;
+  min-width: 180px;
+  padding: 6px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: rgba(15, 18, 24, 0.98);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.45), 0 0 0 1px rgba(0, 180, 255, 0.06);
+}
+
+.app-context-menu__item {
+  padding: 8px 12px;
+  border-radius: 7px;
+  color: var(--ink-muted);
+  font-size: 12px;
+  letter-spacing: 0.02em;
+  user-select: none;
+  white-space: nowrap;
+}
