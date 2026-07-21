@@ -4,10 +4,12 @@ import { beforeEach, describe, it } from "node:test";
 import { useLayoutStore } from "../src/app/layout-store.ts";
 import {
   normalizeLocalCompanionUrl,
+  parseSessionStats,
   projectKeyForSession,
   projectLabelForSession,
   readSessionRuntimeStatus,
   selectActiveTranscript,
+  selectActiveTurnStats,
   useSessionStore,
 } from "../src/session/session-store.ts";
 import { api } from "../src/lib/tauri.ts";
@@ -34,6 +36,8 @@ beforeEach(() => {
     todos: {},
     subagents: {},
     states: {},
+    turnStats: {},
+    turnTiming: {},
     error: null,
     streaming: {},
     extensionUiRequests: {},
@@ -94,6 +98,79 @@ describe("session runtime status", () => {
       thinkingLevel: null,
       contextPercent: null,
     });
+  });
+});
+
+describe("session turn stats", () => {
+  it("records lastTurnMs from turn_start/turn_end wall time", () => {
+    const store = useSessionStore.getState();
+    const originalNow = Date.now;
+    let now = 1_000_000;
+    Date.now = () => now;
+    try {
+      store.applyOmpEvent("session-1", { type: "turn_start" });
+      assert.equal(useSessionStore.getState().turnTiming["session-1"], 1_000_000);
+
+      now = 1_002_500;
+      store.applyOmpEvent("session-1", { type: "turn_end" });
+
+      const stats = useSessionStore.getState().turnStats["session-1"];
+      assert.equal(stats?.lastTurnMs, 2500);
+      assert.equal(useSessionStore.getState().turnTiming["session-1"], undefined);
+      assert.deepEqual(selectActiveTurnStats(useSessionStore.getState()).lastTurnMs, 2500);
+    } finally {
+      Date.now = originalNow;
+    }
+  });
+
+  it("records lastTurnMs from agent_start/agent_end and refreshes stats", async () => {
+    const originalGetState = api.getState;
+    const originalGetSessionStats = api.getSessionStats;
+    const originalHousekeeping = api.postTurnHousekeeping;
+    let statsCalls = 0;
+    api.getState = async () => ({});
+    api.postTurnHousekeeping = async () => {};
+    api.getSessionStats = async () => {
+      statsCalls += 1;
+      return {
+        type: "response",
+        success: true,
+        data: {
+          tokens: { input: 100, output: 50, total: 150 },
+          cost: 0.01,
+        },
+      };
+    };
+
+    const originalNow = Date.now;
+    let now = 5_000;
+    Date.now = () => now;
+
+    try {
+      const store = useSessionStore.getState();
+      store.applyOmpEvent("session-1", { type: "agent_start" });
+      now = 6_000;
+      store.applyOmpEvent("session-1", { type: "agent_end" });
+
+      assert.equal(useSessionStore.getState().turnStats["session-1"]?.lastTurnMs, 1000);
+
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+
+      assert.equal(statsCalls, 1);
+      const stats = useSessionStore.getState().turnStats["session-1"];
+      assert.equal(stats?.inputTokens, 100);
+      assert.equal(stats?.outputTokens, 50);
+      assert.equal(stats?.costUsd, 0.01);
+      assert.equal(stats?.tps, 50);
+      assert.deepEqual(parseSessionStats({ data: { tokens: { input: 1, output: 2 } } }).totalTokens, 3);
+    } finally {
+      Date.now = originalNow;
+      api.getState = originalGetState;
+      api.getSessionStats = originalGetSessionStats;
+      api.postTurnHousekeeping = originalHousekeeping;
+    }
   });
 });
 

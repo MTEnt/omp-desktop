@@ -33,6 +33,22 @@ import {
   reviewFileFromTool,
   upsertReviewFile,
 } from "./review.ts";
+import {
+  EMPTY_TURN_STATS,
+  mergeTurnStats,
+  parseSessionStats,
+  type SessionTurnStats,
+} from "./session-stats.ts";
+
+export type { SessionTurnStats } from "./session-stats.ts";
+export {
+  EMPTY_TURN_STATS,
+  parseSessionStats,
+  formatTokenChip,
+  formatTpsChip,
+  formatCostChip,
+  formatTurnStatsTitle,
+} from "./session-stats.ts";
 
 type OmpEvent = Record<string, unknown>;
 
@@ -56,6 +72,8 @@ export interface SessionStore {
   subagents: Record<string, SubagentInfo[]>;
   reviewFiles: Record<string, ReviewFile[]>;
   states: Record<string, unknown>;
+  turnStats: Record<string, SessionTurnStats>;
+  turnTiming: Record<string, number>;
   error: string | null;
   streaming: Record<string, boolean>;
   extensionUiRequests: Record<string, ExtensionUiRequest[]>;
@@ -77,6 +95,7 @@ export interface SessionStore {
   restartSession: (sessionId: string) => Promise<void>;
   closeSession: (sessionId: string) => Promise<void>;
   refreshState: (sessionId: string) => Promise<void>;
+  refreshSessionStats: (sessionId: string) => Promise<void>;
   loadSubagents: (sessionId: string) => Promise<void>;
   loadSubagentMessages: (
     sessionId: string,
@@ -154,6 +173,13 @@ export const selectActiveRuntimeSnapshot = (
   state: SessionStore,
 ): unknown =>
   state.activeSessionId ? state.states[state.activeSessionId] : undefined;
+
+export const selectActiveTurnStats = (
+  state: SessionStore,
+): SessionTurnStats =>
+  state.activeSessionId
+    ? (state.turnStats[state.activeSessionId] ?? EMPTY_TURN_STATS)
+    : EMPTY_TURN_STATS;
 
 export const selectIsActiveStreaming = (state: SessionStore): boolean =>
   state.activeSessionId
@@ -878,6 +904,8 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
   subagents: {},
   reviewFiles: {},
   states: {},
+  turnStats: {},
+  turnTiming: {},
   error: null,
   streaming: {},
   extensionUiRequests: {},
@@ -1007,6 +1035,11 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
         subagents: { ...state.subagents, [session.id]: [] },
         reviewFiles: { ...state.reviewFiles, [session.id]: [] },
         states: { ...state.states, [session.id]: {} },
+        turnStats: {
+          ...state.turnStats,
+          [session.id]: { ...EMPTY_TURN_STATS },
+        },
+        turnTiming: withoutSession(state.turnTiming, session.id),
         streaming: { ...state.streaming, [session.id]: false },
         browserArtifacts: { ...state.browserArtifacts, [session.id]: [] },
         companions: { ...state.companions, [session.id]: [] },
@@ -1066,6 +1099,11 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
         subagents: { ...state.subagents, [session.id]: [] },
         reviewFiles: { ...state.reviewFiles, [session.id]: [] },
         states: { ...state.states, [session.id]: {} },
+        turnStats: {
+          ...state.turnStats,
+          [session.id]: { ...EMPTY_TURN_STATS },
+        },
+        turnTiming: withoutSession(state.turnTiming, session.id),
         streaming: { ...state.streaming, [session.id]: false },
         browserArtifacts: { ...state.browserArtifacts, [session.id]: [] },
         companions: { ...state.companions, [session.id]: [] },
@@ -1143,6 +1181,8 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
         subagents: withoutSession(state.subagents, sessionId),
         reviewFiles: withoutSession(state.reviewFiles, sessionId),
         states: withoutSession(state.states, sessionId),
+        turnStats: withoutSession(state.turnStats, sessionId),
+        turnTiming: withoutSession(state.turnTiming, sessionId),
         streaming: withoutSession(state.streaming, sessionId),
         browserArtifacts: withoutSession(state.browserArtifacts, sessionId),
         companions: withoutSession(state.companions, sessionId),
@@ -1179,6 +1219,26 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
       if (get().sessions.some((session) => session.id === sessionId)) {
         set({ error: `Unable to refresh session: ${errorMessage(error)}` });
       }
+    }
+  },
+
+  refreshSessionStats: async (sessionId) => {
+    try {
+      const raw = await api.getSessionStats(sessionId);
+      if (!get().sessions.some((session) => session.id === sessionId)) return;
+      const parsed = parseSessionStats(raw);
+      set((state) => {
+        const previous = state.turnStats[sessionId];
+        const lastTurnMs = previous?.lastTurnMs ?? null;
+        return {
+          turnStats: {
+            ...state.turnStats,
+            [sessionId]: mergeTurnStats(previous, parsed, { lastTurnMs }),
+          },
+        };
+      });
+    } catch {
+      // Stats are optional chrome; never surface transport noise in the strip.
     }
   },
 
@@ -1650,47 +1710,105 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
       return;
     }
 
-    if (type === "agent_start" || type === "agent_end") {
+    if (
+      type === "agent_start" ||
+      type === "agent_end" ||
+      type === "turn_start" ||
+      type === "turn_end"
+    ) {
+      const isStart = type === "agent_start" || type === "turn_start";
+      const isEnd = type === "agent_end" || type === "turn_end";
       const willContinue = type === "agent_end" && event.willContinue === true;
-      set((state) => ({
-        streaming: {
-          ...state.streaming,
-          [sessionId]: type === "agent_start" || willContinue,
-        },
-      }));
-      if (type === "agent_end" && !willContinue) {
+
+      if (isStart) {
+        set((state) => ({
+          streaming: {
+            ...state.streaming,
+            [sessionId]:
+              type === "agent_start" ? true : state.streaming[sessionId],
+          },
+          turnTiming: {
+            ...state.turnTiming,
+            [sessionId]: Date.now(),
+          },
+        }));
+        return;
+      }
+
+      if (isEnd) {
+        const endedAt = Date.now();
+        set((state) => {
+          const startedAt = state.turnTiming[sessionId];
+          const lastTurnMs =
+            typeof startedAt === "number" && endedAt >= startedAt
+              ? endedAt - startedAt
+              : state.turnStats[sessionId]?.lastTurnMs ?? null;
+          const previous = state.turnStats[sessionId];
+          const nextStats = previous
+            ? mergeTurnStats(previous, previous, { lastTurnMs })
+            : {
+                ...EMPTY_TURN_STATS,
+                lastTurnMs,
+                tps: null,
+              };
+          const nextTiming = { ...state.turnTiming };
+          delete nextTiming[sessionId];
+          return {
+            streaming: {
+              ...state.streaming,
+              [sessionId]:
+                type === "agent_end" ? willContinue : state.streaming[sessionId],
+            },
+            turnTiming: nextTiming,
+            turnStats: {
+              ...state.turnStats,
+              [sessionId]: nextStats,
+            },
+          };
+        });
+
+        if (type === "agent_end" && willContinue) {
+          return;
+        }
+
         // Never block the UI/stream path: refresh + memory/job board work runs after the turn.
-        void get().refreshState(sessionId);
-        const session = get().sessions.find((item) => item.id === sessionId);
-        if (session) {
-          const projectKey = projectKeyForSession(session);
-          const projectLabel = projectLabelForSession(session);
-          const transcript = get().transcripts[sessionId] ?? [];
-          const lastUser = [...transcript]
-            .reverse()
-            .find((item) => item.kind === "user");
-          const lastAssistant = [...transcript]
-            .reverse()
-            .find((item) => item.kind === "assistant");
-          const summary = [
-            lastUser ? `User: ${lastUser.text.slice(0, 240)}` : "",
-            lastAssistant && lastAssistant.kind === "assistant"
-              ? `Assistant: ${lastAssistant.text.slice(0, 240)}`
-              : "",
-          ]
-            .filter(Boolean)
-            .join(" | ");
-          void api
-            .postTurnHousekeeping({
-              sessionId,
-              projectKey,
-              projectLabel,
-              role: "default",
-              summary: summary || "Turn complete",
-            })
-            .catch(() => undefined);
-          // Warm role-memory cache while the user reads the reply.
-          void get().ensureRoleMemoryPreamble("default", sessionId);
+        if (type === "agent_end" || type === "turn_end") {
+          void get().refreshState(sessionId);
+          void get().refreshSessionStats(sessionId);
+        }
+
+        if (type === "agent_end" && !willContinue) {
+          const session = get().sessions.find((item) => item.id === sessionId);
+          if (session) {
+            const projectKey = projectKeyForSession(session);
+            const projectLabel = projectLabelForSession(session);
+            const transcript = get().transcripts[sessionId] ?? [];
+            const lastUser = [...transcript]
+              .reverse()
+              .find((item) => item.kind === "user");
+            const lastAssistant = [...transcript]
+              .reverse()
+              .find((item) => item.kind === "assistant");
+            const summary = [
+              lastUser ? `User: ${lastUser.text.slice(0, 240)}` : "",
+              lastAssistant && lastAssistant.kind === "assistant"
+                ? `Assistant: ${lastAssistant.text.slice(0, 240)}`
+                : "",
+            ]
+              .filter(Boolean)
+              .join(" | ");
+            void api
+              .postTurnHousekeeping({
+                sessionId,
+                projectKey,
+                projectLabel,
+                role: "default",
+                summary: summary || "Turn complete",
+              })
+              .catch(() => undefined);
+            // Warm role-memory cache while the user reads the reply.
+            void get().ensureRoleMemoryPreamble("default", sessionId);
+          }
         }
       }
       return;

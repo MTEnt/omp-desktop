@@ -3,8 +3,13 @@ import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 import { useLayoutStore, type PanelId } from "./layout-store.ts";
 import { LeftRail, RightRail, type RailTarget } from "./rails.tsx";
 import {
+  formatCostChip,
+  formatTokenChip,
+  formatTpsChip,
+  formatTurnStatsTitle,
   readSessionRuntimeStatus,
   selectActiveRuntimeSnapshot,
+  selectActiveTurnStats,
   useSessionStore,
 } from "../session/session-store.ts";
 import { Composer } from "../session/composer.tsx";
@@ -234,6 +239,7 @@ export const Shell = () => {
   const togglePin = useLayoutStore((state) => state.togglePin);
   const activeSessionId = useSessionStore((state) => state.activeSessionId);
   const runtimeSnapshot = useSessionStore(selectActiveRuntimeSnapshot);
+  const turnStats = useSessionStore(selectActiveTurnStats);
   const refreshState = useSessionStore((state) => state.refreshState);
   const openFolder = useSessionStore((state) => state.openFolder);
   const [paletteOpen, setPaletteOpen] = useState(false);
@@ -247,6 +253,10 @@ export const Shell = () => {
     () => readSessionRuntimeStatus(runtimeSnapshot),
     [runtimeSnapshot],
   );
+  const tokenChip = formatTokenChip(turnStats);
+  const tpsChip = formatTpsChip(turnStats.tps);
+  const costChip = formatCostChip(turnStats.costUsd);
+  const statsTitle = formatTurnStatsTitle(turnStats);
   const activeTargets: RailTarget[] = [
     ...(drawer ? [drawer] : ["chat" as const]),
     ...pinned,
@@ -350,6 +360,21 @@ export const Shell = () => {
               ? "—"
               : `${Math.round(runtimeStatus.contextPercent)}%`}
           </span>
+          {tokenChip ? (
+            <span className="runtime-meta" title={statsTitle}>
+              {tokenChip}
+            </span>
+          ) : null}
+          {tpsChip ? (
+            <span className="runtime-meta" title={statsTitle}>
+              {tpsChip}
+            </span>
+          ) : null}
+          {costChip ? (
+            <span className="runtime-meta" title={statsTitle}>
+              {costChip}
+            </span>
+          ) : null}
           <button
             className="topbar-open-folder"
             type="button"
