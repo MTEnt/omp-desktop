@@ -5,6 +5,7 @@ import {
   openDirectoryDialog,
   openExternalUrl,
 } from "../lib/tauri.ts";
+import { useWorkspaceStore } from "../app/workspace-store.ts";
 import type {
   ActivityItem,
   AppSettings,
@@ -1036,6 +1037,9 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
       if (!selectedCwd) return;
 
       const session = await api.createSession(selectedCwd, resume);
+      useWorkspaceStore.getState().upsertWorkspace({
+        cwd: selectedCwd,
+      });
       set((state) => ({
         sessions: [
           ...state.sessions.filter((candidate) => candidate.id !== session.id),

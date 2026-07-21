@@ -1,6 +1,10 @@
 import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 
 import { useLayoutStore, type PanelId } from "./layout-store.ts";
+import {
+  groupSessionsByWorkspace,
+  useWorkspaceStore,
+} from "./workspace-store.ts";
 import { LeftRail, RightRail, type RailTarget } from "./rails.tsx";
 import {
   formatCostChip,
@@ -67,8 +71,13 @@ const SessionSidebar = () => {
   const streaming = useSessionStore((state) => state.streaming);
   const setActive = useSessionStore((state) => state.setActive);
   const closeSession = useSessionStore((state) => state.closeSession);
-
   const openFolder = useSessionStore((state) => state.openFolder);
+  const workspaces = useWorkspaceStore((state) => state.workspaces);
+
+  const groups = useMemo(
+    () => groupSessionsByWorkspace(sessions, workspaces),
+    [sessions, workspaces],
+  );
 
   return (
     <aside className="session-sidebar" aria-label="Sessions">
@@ -96,45 +105,64 @@ const SessionSidebar = () => {
       </div>
       {sessions.length > 0 ? (
         <div className="session-sidebar__list" role="tablist">
-          {sessions.map((session) => {
-            const isActive = session.id === activeSessionId;
-            const isStreaming = streaming[session.id] === true;
-            return (
-              <div
-                className={`session-side-item${isActive ? " is-active" : ""}`}
-                key={session.id}
-              >
-                <button
-                  type="button"
-                  className="session-side-item__select"
-                  role="tab"
-                  aria-selected={isActive}
-                  aria-controls="session-transcript"
-                  title={`${session.title} — ${session.cwd}`}
-                  onClick={() => setActive(session.id)}
-                >
-                  {isStreaming && (
-                    <span
-                      className="session-side-item__streaming"
-                      title="Streaming"
-                      aria-label="Streaming"
-                    />
-                  )}
-                  <span className="session-side-item__title">{session.title}</span>
-                  <span className="session-side-item__cwd">{session.cwd}</span>
-                </button>
-                <button
-                  type="button"
-                  className="session-side-item__close"
-                  title={`Close ${session.title}`}
-                  aria-label={`Close ${session.title}`}
-                  onClick={() => void closeSession(session.id)}
-                >
-                  ×
-                </button>
-              </div>
-            );
-          })}
+          {groups.map((group) => (
+            <section
+              key={group.workspace?.id ?? `cwd:${group.cwdKey}`}
+              className="session-sidebar__group"
+              aria-label={group.label}
+            >
+              <header className="session-sidebar__group-header">
+                <span
+                  className="session-sidebar__group-swatch"
+                  style={group.color ? { background: group.color } : undefined}
+                  aria-hidden="true"
+                />
+                <span className="session-sidebar__group-label">
+                  {group.label}
+                  {group.workspace?.pinned ? " ·" : ""}
+                </span>
+              </header>
+              {group.sessions.map((session) => {
+                const isActive = session.id === activeSessionId;
+                const isStreaming = streaming[session.id] === true;
+                return (
+                  <div
+                    className={`session-side-item${isActive ? " is-active" : ""}`}
+                    key={session.id}
+                  >
+                    <button
+                      type="button"
+                      className="session-side-item__select"
+                      role="tab"
+                      aria-selected={isActive}
+                      aria-controls="session-transcript"
+                      title={`${session.title} — ${session.cwd}`}
+                      onClick={() => setActive(session.id)}
+                    >
+                      {isStreaming && (
+                        <span
+                          className="session-side-item__streaming"
+                          title="Streaming"
+                          aria-label="Streaming"
+                        />
+                      )}
+                      <span className="session-side-item__title">{session.title}</span>
+                      <span className="session-side-item__cwd">{session.cwd}</span>
+                    </button>
+                    <button
+                      type="button"
+                      className="session-side-item__close"
+                      title={`Close ${session.title}`}
+                      aria-label={`Close ${session.title}`}
+                      onClick={() => void closeSession(session.id)}
+                    >
+                      ×
+                    </button>
+                  </div>
+                );
+              })}
+            </section>
+          ))}
         </div>
       ) : (
         <div className="session-sidebar__empty">
