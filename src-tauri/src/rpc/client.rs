@@ -197,7 +197,9 @@ mod tests {
     use super::*;
     use crate::rpc::{frame_id, frame_type};
     use serde_json::json;
-    use tokio::time::{sleep, timeout, Duration};
+    #[cfg(unix)]
+    use tokio::time::sleep;
+    use tokio::time::{timeout, Duration};
 
     const MOCK_NODE: &str = r#"
 const readline = require("readline");
@@ -232,6 +234,7 @@ input.on("line", (line) => {
 });
 "#;
 
+    #[cfg(unix)]
     const STUBBORN_NODE: &str = r#"
 process.stdout.write('{"type":"ready"}\n');
 process.stdin.resume();

@@ -343,10 +343,16 @@ fn fallback_shell() -> PathBuf {
 
 #[cfg(test)]
 mod tests {
-    use super::{shell_from_env, PtyManager, PtyOutput};
+    #[cfg(unix)]
+    use super::PtyManager;
+    use super::{shell_from_env, PtyOutput};
     use std::ffi::OsString;
-    use std::path::{Path, PathBuf};
+    #[cfg(unix)]
+    use std::path::Path;
+    use std::path::PathBuf;
+    #[cfg(unix)]
     use std::sync::mpsc;
+    #[cfg(unix)]
     use std::time::{Duration, Instant};
 
     #[test]

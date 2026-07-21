@@ -314,7 +314,7 @@ pub async fn install_impeccable() -> Result<SetupStatus, AppError> {
 }
 
 #[cfg(not(unix))]
-fn copy_dir_all(src: &Path, dst: &Path) -> AppResult<()> {
+fn copy_dir_all(src: &Path, dst: &Path) -> Result<(), AppError> {
     fs::create_dir_all(dst).map_err(|e| AppError::Msg(format!("mkdir: {e}")))?;
     for entry in fs::read_dir(src).map_err(|e| AppError::Msg(format!("read_dir: {e}")))? {
         let entry = entry.map_err(|e| AppError::Msg(format!("dir entry: {e}")))?;

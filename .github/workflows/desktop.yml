@@ -31,9 +31,9 @@ jobs:
     timeout-minutes: 45
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: 22.12.0
           cache: npm
@@ -57,7 +57,7 @@ jobs:
         run: npm --prefix ui ci --ignore-scripts
 
       - name: Verify contracts
-        run: npm test
+        run: npm test && npm run lint
 
       - name: Build desktop bundle
         uses: tauri-apps/tauri-action@v1

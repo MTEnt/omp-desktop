@@ -311,11 +311,14 @@ pub fn build_omp_args(
 mod tests {
     use super::*;
     use serde_json::json;
+    #[cfg(unix)]
     use std::fs;
     #[cfg(unix)]
     use std::os::unix::fs::PermissionsExt;
     use std::path::{Path, PathBuf};
+    #[cfg(unix)]
     use std::time::{SystemTime, UNIX_EPOCH};
+    #[cfg(unix)]
     use tokio::time::{timeout, Duration};
 
     #[test]
@@ -409,6 +412,7 @@ mod tests {
         assert_eq!(info.project_label(), "production:website");
     }
 
+    #[cfg(unix)]
     fn temp_dir() -> PathBuf {
         let unique = SystemTime::now()
             .duration_since(UNIX_EPOCH)
