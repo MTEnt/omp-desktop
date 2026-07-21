@@ -333,7 +333,7 @@ mod tests {
         let prepared = prepare_image_from_bytes(&bytes).expect("large image");
         assert!(prepared.width <= MAX_EDGE);
         assert!(prepared.height <= MAX_EDGE);
-        let frame = estimate_prompt_frame_len("x", &[prepared.clone()]);
+        let frame = estimate_prompt_frame_len("x", std::slice::from_ref(&prepared));
         assert!(
             frame < MAX_FRAME,
             "estimated frame {frame} must be under {MAX_FRAME}"

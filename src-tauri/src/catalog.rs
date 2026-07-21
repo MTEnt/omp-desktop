@@ -121,11 +121,11 @@ pub fn load_catalog(home: &Path, project_cwd: Option<&Path>) -> CatalogSnapshot 
     }
 
     snap.mcp_servers
-        .sort_by(|a, b| a.name.to_ascii_lowercase().cmp(&b.name.to_ascii_lowercase()));
+        .sort_by_key(|a| a.name.to_ascii_lowercase());
     snap.agents
-        .sort_by(|a, b| a.name.to_ascii_lowercase().cmp(&b.name.to_ascii_lowercase()));
+        .sort_by_key(|a| a.name.to_ascii_lowercase());
     snap.skills
-        .sort_by(|a, b| a.name.to_ascii_lowercase().cmp(&b.name.to_ascii_lowercase()));
+        .sort_by_key(|a| a.name.to_ascii_lowercase());
 
     snap
 }

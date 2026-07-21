@@ -614,7 +614,7 @@ fn make_snippet(line: &str, query_lower: &str) -> String {
     let end = (idx + query_lower.len() + 80).min(line.len());
     let mut snippet = String::new();
     if start > 0 {
-        snippet.push_str("…");
+        snippet.push('…');
     }
     snippet.push_str(line[start..end].trim());
     if end < line.len() {

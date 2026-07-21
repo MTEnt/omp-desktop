@@ -96,7 +96,6 @@ pub async fn list_available_models(
     let ctx = crate::omp_context::OmpProcessContext {
         cwd,
         profile,
-        omp_bin: omp_bin.clone(),
     };
     let args = ctx.base_rpc_args(true);
     let client = RpcClient::spawn(&omp_bin, &args).await?;

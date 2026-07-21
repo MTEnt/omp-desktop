@@ -4,7 +4,6 @@ use std::path::PathBuf;
 pub struct OmpProcessContext {
     pub cwd: PathBuf,
     pub profile: Option<String>,
-    pub omp_bin: PathBuf,
 }
 
 impl OmpProcessContext {
@@ -36,7 +35,6 @@ mod tests {
         let ctx = OmpProcessContext {
             cwd: PathBuf::from("/tmp/proj"),
             profile: Some("work".into()),
-            omp_bin: PathBuf::from("omp"),
         };
         let args = ctx.base_rpc_args(true);
         assert!(args.windows(2).any(|w| w == ["--profile", "work"]));
@@ -48,7 +46,6 @@ mod tests {
         let ctx = OmpProcessContext {
             cwd: PathBuf::from("/tmp/proj"),
             profile: None,
-            omp_bin: PathBuf::from("omp"),
         };
         let args = ctx.base_rpc_args(true);
         assert!(!args.iter().any(|a| a == "--profile"));
