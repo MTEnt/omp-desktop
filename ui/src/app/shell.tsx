@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 
 import { useLayoutStore, type PanelId } from "./layout-store.ts";
 import { LeftRail, RightRail, type RailTarget } from "./rails.tsx";
@@ -18,7 +18,6 @@ import { SubagentsPanel } from "../panels/subagents-panel.tsx";
 import { JobsPanel } from "../panels/jobs-panel.tsx";
 import { MemoryPanel } from "../panels/memory-panel.tsx";
 import { ScratchpadPanel } from "../panels/scratchpad-panel.tsx";
-import { TerminalPanel } from "../panels/terminal-panel.tsx";
 import { BrowserPanel } from "../panels/browser-panel.tsx";
 import { CompanionPanel } from "../panels/companion-panel.tsx";
 import { LaunchPanel } from "../panels/launch-panel.tsx";
@@ -28,6 +27,11 @@ import { RoleModelStrip } from "./role-model-picker.tsx";
 import { OnboardingWalkthrough } from "./onboarding-walkthrough.tsx";
 import { SshConnectModal } from "./ssh-connect-modal.tsx";
 import { TaskProgressStrip } from "./task-progress-strip.tsx";
+import { ExtensionUiDialog } from "./extension-ui-dialog.tsx";
+
+const TerminalPanel = lazy(async () => ({
+  default: (await import("../panels/terminal-panel.tsx")).TerminalPanel,
+}));
 
 const panelMeta: Record<PanelId, { label: string; eyebrow: string }> = {
   sessions: { label: "Sessions", eyebrow: "Workspace" },
@@ -156,7 +160,11 @@ const PanelBody = ({ panel }: { panel: PanelId }) => {
     case "scratchpad":
       return <ScratchpadPanel />;
     case "terminal":
-      return <TerminalPanel />;
+      return (
+        <Suspense fallback={<div className="empty-state" role="status">Loading terminal…</div>}>
+          <TerminalPanel />
+        </Suspense>
+      );
     case "launch":
       return <LaunchPanel />;
     case "browser":
@@ -438,6 +446,7 @@ export const Shell = () => {
       <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} />
       <OnboardingWalkthrough />
       <SshConnectModal open={sshOpen} onClose={() => setSshOpen(false)} />
+      <ExtensionUiDialog />
     </div>
   );
 };

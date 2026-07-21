@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { api, isTauriRuntime } from "../lib/tauri.ts";
 import type {
@@ -67,7 +67,7 @@ export const SshConnectModal = ({ open, onClose }: SshConnectModalProps) => {
     };
   };
 
-  const refresh = async () => {
+  const refresh = useCallback(async () => {
     if (!isTauriRuntime()) {
       setError("SSH connect requires the native OMP Desktop window.");
       return;
@@ -81,16 +81,18 @@ export const SshConnectModal = ({ open, onClose }: SshConnectModalProps) => {
       ]);
       setHosts(nextHosts);
       setRecents(nextRecents);
-      if (!selectedName && nextHosts[0]) setSelectedName(nextHosts[0].name);
-      if (selectedName && !nextHosts.some((h) => h.name === selectedName)) {
-        setSelectedName(nextHosts[0]?.name ?? "");
-      }
+      setSelectedName((current) => {
+        if (!current || !nextHosts.some((host) => host.name === current)) {
+          return nextHosts[0]?.name ?? "";
+        }
+        return current;
+      });
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     if (!open) return;
@@ -98,7 +100,7 @@ export const SshConnectModal = ({ open, onClose }: SshConnectModalProps) => {
     setListing(null);
     setError(null);
     void refresh();
-  }, [open]);
+  }, [open, refresh]);
 
   if (!open) return null;
 

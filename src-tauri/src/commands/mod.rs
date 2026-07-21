@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::fs;
 use std::path::{Path, PathBuf};
-use tauri::{AppHandle, Emitter, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 use tokio::sync::Mutex;
 
 pub struct AppState {
@@ -51,7 +51,6 @@ struct SessionEventEnvelope {
     session_id: String,
     event: Value,
 }
-
 
 #[tauri::command(rename_all = "camelCase")]
 pub async fn get_model_roles() -> Result<ModelRolesSnapshot, AppError> {
@@ -103,12 +102,16 @@ pub async fn save_settings(
     state: State<'_, AppState>,
     settings: AppSettings,
 ) -> Result<(), AppError> {
+    let omp_bin = settings::resolve_omp_binary(&settings)?;
     settings::save_settings(&state.config_dir, &settings)?;
-    state.sessions.lock().await.set_settings(settings.clone());
+    state
+        .sessions
+        .lock()
+        .await
+        .set_settings(settings.clone(), omp_bin);
     *state.settings.lock().await = settings;
     Ok(())
 }
-
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -132,10 +135,12 @@ fn which_omp(settings: &AppSettings) -> Option<PathBuf> {
 }
 
 fn read_omp_version(bin: &Path) -> Option<String> {
-    let output = std::process::Command::new(bin)
-        .arg("--version")
-        .output()
-        .ok()?;
+    let mut command = std::process::Command::new(bin);
+    command.arg("--version");
+    if let Some(path) = settings::runtime_command_path(bin) {
+        command.env("PATH", path);
+    }
+    let output = command.output().ok()?;
     if !output.status.success() {
         return None;
     }
@@ -191,13 +196,15 @@ pub async fn get_setup_status(state: State<'_, AppState>) -> Result<SetupStatus,
     })
 }
 
-
 fn run_npx(args: &[&str]) -> std::io::Result<std::process::ExitStatus> {
     #[cfg(windows)]
     {
         // npx is typically a .cmd shim; run through cmd.exe for CreateProcess compatibility.
         let mut command = std::process::Command::new("cmd");
         command.arg("/C").arg("npx");
+        if let Some(path) = settings::runtime_command_path(Path::new("npx")) {
+            command.env("PATH", path);
+        }
         for arg in args {
             command.arg(arg);
         }
@@ -206,6 +213,9 @@ fn run_npx(args: &[&str]) -> std::io::Result<std::process::ExitStatus> {
     #[cfg(not(windows))]
     {
         let mut command = std::process::Command::new("npx");
+        if let Some(path) = settings::runtime_command_path(Path::new("npx")) {
+            command.env("PATH", path);
+        }
         for arg in args {
             command.arg(arg);
         }
@@ -225,7 +235,7 @@ pub async fn install_impeccable() -> Result<SetupStatus, AppError> {
     if !agents_skill.join("SKILL.md").is_file() {
         let status = run_npx(&[
             "--yes",
-            "impeccable@latest",
+            "impeccable@3.2.1",
             "install",
             "--yes",
             "--scope=global",
@@ -321,8 +331,6 @@ fn copy_dir_all(src: &Path, dst: &Path) -> AppResult<()> {
     Ok(())
 }
 
-
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SkillInfo {
@@ -356,7 +364,12 @@ fn parse_skill_frontmatter(raw: &str) -> (Option<String>, Option<String>) {
     (name, description)
 }
 
-fn scan_skills_dir(dir: &Path, source: &str, out: &mut Vec<SkillInfo>, seen: &mut std::collections::HashSet<String>) {
+fn scan_skills_dir(
+    dir: &Path,
+    source: &str,
+    out: &mut Vec<SkillInfo>,
+    seen: &mut std::collections::HashSet<String>,
+) {
     let Ok(entries) = fs::read_dir(dir) else {
         return;
     };
@@ -372,10 +385,7 @@ fn scan_skills_dir(dir: &Path, source: &str, out: &mut Vec<SkillInfo>, seen: &mu
         let Ok(raw) = fs::read_to_string(&skill_md) else {
             continue;
         };
-        let folder = path
-            .file_name()
-            .and_then(|s| s.to_str())
-            .unwrap_or("skill");
+        let folder = path.file_name().and_then(|s| s.to_str()).unwrap_or("skill");
         let (name, description) = parse_skill_frontmatter(&raw);
         let name = name.unwrap_or_else(|| folder.to_string());
         if !seen.insert(name.clone()) {
@@ -395,9 +405,24 @@ pub async fn list_skills() -> Result<Vec<SkillInfo>, AppError> {
     let mut out = Vec::new();
     let mut seen = std::collections::HashSet::new();
     if let Some(home) = dirs::home_dir() {
-        scan_skills_dir(&home.join(".omp/agent/skills"), "omp-user", &mut out, &mut seen);
-        scan_skills_dir(&home.join(".agents/skills"), "agents-user", &mut out, &mut seen);
-        scan_skills_dir(&home.join(".claude/skills"), "claude-user", &mut out, &mut seen);
+        scan_skills_dir(
+            &home.join(".omp/agent/skills"),
+            "omp-user",
+            &mut out,
+            &mut seen,
+        );
+        scan_skills_dir(
+            &home.join(".agents/skills"),
+            "agents-user",
+            &mut out,
+            &mut seen,
+        );
+        scan_skills_dir(
+            &home.join(".claude/skills"),
+            "claude-user",
+            &mut out,
+            &mut seen,
+        );
     }
     out.sort_by(|a, b| a.name.cmp(&b.name));
     Ok(out)
@@ -431,16 +456,10 @@ pub async fn create_session(
     // Persist agent + job card for the job board.
     {
         let memory = state.memory.lock().await;
-        let project = PathBuf::from(&info.cwd);
-        let key = memory::project_key(&project);
-        let label = memory::project_label(&project);
+        let key = info.project_key();
+        let label = info.project_label();
         let _ = memory.ensure_role_roster(&key, &label);
-        let _ = memory.ensure_default_agent_for_session(
-            &info.id,
-            &key,
-            &label,
-            "default",
-        );
+        let _ = memory.ensure_default_agent_for_session(&info.id, &key, &label, "default");
     }
 
     let event_app = app.clone();
@@ -455,12 +474,17 @@ pub async fn create_session(
                 },
             );
         }
+        event_app
+            .state::<AppState>()
+            .sessions
+            .lock()
+            .await
+            .mark_exited(&session_id);
         let _ = event_app.emit("omp-session-exit", session_id);
     });
 
     Ok(info)
 }
-
 
 #[tauri::command(rename_all = "camelCase")]
 pub async fn list_ssh_hosts(state: State<'_, AppState>) -> Result<Vec<SshHostInfo>, AppError> {
@@ -526,7 +550,10 @@ pub async fn create_ssh_session(
             .map_err(|e| AppError::Msg(format!("ssh probe join error: {e}")))??
     };
     if !probe.ok {
-        return Err(AppError::Msg(format!("SSH connection failed: {}", probe.message)));
+        return Err(AppError::Msg(format!(
+            "SSH connection failed: {}",
+            probe.message
+        )));
     }
 
     let mut target = remote;
@@ -555,20 +582,10 @@ pub async fn create_ssh_session(
 
     {
         let memory = state.memory.lock().await;
-        let project = PathBuf::from(&info.cwd);
-        let key = memory::project_key(&project);
-        let label = info
-            .remote
-            .as_ref()
-            .map(|r| r.label.clone())
-            .unwrap_or_else(|| memory::project_label(&project));
+        let key = info.project_key();
+        let label = info.project_label();
         let _ = memory.ensure_role_roster(&key, &label);
-        let _ = memory.ensure_default_agent_for_session(
-            &info.id,
-            &key,
-            &label,
-            "default",
-        );
+        let _ = memory.ensure_default_agent_for_session(&info.id, &key, &label, "default");
     }
 
     let app_handle = app.clone();
@@ -583,6 +600,12 @@ pub async fn create_ssh_session(
                 },
             );
         }
+        app_handle
+            .state::<AppState>()
+            .sessions
+            .lock()
+            .await
+            .mark_exited(&session_id);
         let _ = app_handle.emit("omp-session-exit", session_id);
     });
 
@@ -606,21 +629,17 @@ pub async fn open_pty(
 ) -> Result<(), AppError> {
     let remote = state.sessions.lock().await.remote_target(&session_id);
     let output_session_id = session_id.clone();
-    state
-        .ptys
-        .lock()
-        .await
-        .open_pty(
-            &session_id,
-            &PathBuf::from(cwd),
-            remote.as_ref(),
-            move |data| {
-                let _ = app.emit(
-                    "pty-output",
-                    PtyOutput::new(output_session_id.clone(), data),
-                );
-            },
-        )?;
+    state.ptys.lock().await.open_pty(
+        &session_id,
+        &PathBuf::from(cwd),
+        remote.as_ref(),
+        move |data| {
+            let _ = app.emit(
+                "pty-output",
+                PtyOutput::new(output_session_id.clone(), data),
+            );
+        },
+    )?;
     Ok(())
 }
 
@@ -672,7 +691,6 @@ pub async fn abort(state: State<'_, AppState>, session_id: String) -> Result<Val
 pub async fn get_state(state: State<'_, AppState>, session_id: String) -> Result<Value, AppError> {
     state.sessions.lock().await.get_state(&session_id).await
 }
-
 
 #[tauri::command(rename_all = "camelCase")]
 pub async fn rewrite_assistant_message(
@@ -737,6 +755,20 @@ pub async fn rpc_command(
         .await
 }
 
+#[tauri::command(rename_all = "camelCase")]
+pub async fn respond_extension_ui(
+    state: State<'_, AppState>,
+    session_id: String,
+    request_id: String,
+    response: Value,
+) -> Result<(), AppError> {
+    state
+        .sessions
+        .lock()
+        .await
+        .respond_extension_ui(&session_id, &request_id, response)
+        .await
+}
 
 #[tauri::command(rename_all = "camelCase")]
 pub async fn list_role_notes(
@@ -782,7 +814,11 @@ pub async fn get_role_scratchpad(
     role: String,
     project_key: String,
 ) -> Result<RoleScratchpad, AppError> {
-    state.memory.lock().await.get_scratchpad(&role, &project_key)
+    state
+        .memory
+        .lock()
+        .await
+        .get_scratchpad(&role, &project_key)
 }
 
 #[tauri::command(rename_all = "camelCase")]
@@ -819,6 +855,7 @@ pub async fn list_jobs(
     state.memory.lock().await.list_jobs(project_key.as_deref())
 }
 
+#[allow(clippy::too_many_arguments)]
 #[tauri::command(rename_all = "camelCase")]
 pub async fn upsert_job(
     state: State<'_, AppState>,
@@ -845,7 +882,6 @@ pub async fn upsert_job(
     )
 }
 
-
 #[tauri::command(rename_all = "camelCase")]
 pub async fn post_turn_housekeeping(
     state: State<'_, AppState>,
@@ -861,7 +897,7 @@ pub async fn post_turn_housekeeping(
     let _ = memory.ensure_role_roster(&project_key, &project_label);
     memory.mark_session_turn(&session_id, &project_key, &project_label, &role, &summary)?;
     // Capture a lightweight interaction note for this role (non-blocking intent: caller fires after turn).
-    if summary.trim().len() > 0 && summary != "Turn complete" {
+    if !summary.trim().is_empty() && summary != "Turn complete" {
         let _ = memory.add_role_note(
             &role,
             &project_key,
@@ -879,8 +915,7 @@ mod tests {
     use super::*;
     use crate::settings::AppSettings;
     use serde_json::json;
-    use std::fs;
-use std::path::{Path, PathBuf};
+    use std::path::PathBuf;
 
     #[test]
     fn event_envelope_serializes_session_id_as_camel_case() {
@@ -900,8 +935,10 @@ use std::path::{Path, PathBuf};
 
     #[test]
     fn unresolved_omp_binary_falls_back_to_command_name() {
-        let mut settings = AppSettings::default();
-        settings.omp_binary = Some("/definitely/missing/omp".into());
+        let settings = AppSettings {
+            omp_binary: Some("/definitely/missing/omp".into()),
+            ..AppSettings::default()
+        };
 
         assert_eq!(omp_binary_or_fallback(&settings), PathBuf::from("omp"));
     }

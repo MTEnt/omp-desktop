@@ -1,8 +1,10 @@
 use super::{frame_id, frame_type, parse_frame};
 use crate::error::{AppError, AppResult};
+use crate::settings;
 use serde_json::{Map, Value};
 use std::collections::HashMap;
 use std::ffi::OsStr;
+use std::path::Path;
 use std::process::Stdio;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
@@ -32,12 +34,17 @@ impl RpcClient {
         I: IntoIterator<Item = S>,
         S: AsRef<OsStr>,
     {
-        let mut child = Command::new(program)
+        let program = program.as_ref();
+        let mut command = Command::new(program);
+        command
             .args(args)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .kill_on_drop(true)
-            .spawn()?;
+            .kill_on_drop(true);
+        if let Some(path) = settings::runtime_command_path(Path::new(program)) {
+            command.env("PATH", path);
+        }
+        let mut child = command.spawn()?;
         let stdin = child
             .stdin
             .take()
@@ -169,6 +176,15 @@ impl RpcClient {
             }
         }
     }
+
+    pub async fn send_frame(&self, frame: Value) -> AppResult<()> {
+        let mut line = serde_json::to_vec(&frame)?;
+        line.push(b'\n');
+        let mut stdin = self.stdin.lock().await;
+        stdin.write_all(&line).await?;
+        stdin.flush().await?;
+        Ok(())
+    }
 }
 
 fn insert_command_metadata(command: &mut Map<String, Value>, id: &str, command_type: &str) {
@@ -190,6 +206,10 @@ send({ type: "ready" });
 const input = readline.createInterface({ input: process.stdin });
 input.on("line", (line) => {
   const message = JSON.parse(line);
+  if (message.type === "extension_ui_response") {
+    send({ type: "observed_extension_ui_response", frame: message });
+    return;
+  }
   if (message.message === "echo-event") {
     send({
       type: "message_update",
@@ -222,6 +242,7 @@ setInterval(() => {}, 1000);
         RpcClient::spawn("node", ["-e", MOCK_NODE]).await.unwrap()
     }
 
+    #[cfg(unix)]
     async fn process_exited(pid: u32) {
         let pid = pid.to_string();
         loop {
@@ -239,6 +260,7 @@ setInterval(() => {}, 1000);
         }
     }
 
+    #[cfg(unix)]
     #[tokio::test]
     async fn dropping_client_terminates_child() {
         let client = RpcClient::spawn("node", ["-e", STUBBORN_NODE])
@@ -284,6 +306,35 @@ setInterval(() => {}, 1000);
         assert_eq!(frame_id(&fast), Some("req_1"));
         assert_eq!(frame_type(&slow), Some("response"));
         assert_eq!(frame_type(&fast), Some("response"));
+    }
+
+    #[tokio::test]
+    async fn sends_extension_ui_responses_without_request_correlation() {
+        let mut client = spawn_mock().await;
+        client.wait_ready(Duration::from_secs(2)).await.unwrap();
+        let mut events = client.take_events().expect("event receiver");
+
+        client
+            .send_frame(json!({
+                "type": "extension_ui_response",
+                "id": "approval-1",
+                "value": "Approve",
+            }))
+            .await
+            .unwrap();
+
+        let observed = timeout(Duration::from_secs(2), async {
+            loop {
+                let frame = events.recv().await.expect("event channel closed");
+                if frame_type(&frame) == Some("observed_extension_ui_response") {
+                    break frame;
+                }
+            }
+        })
+        .await
+        .expect("extension UI response timed out");
+        assert_eq!(observed["frame"]["id"], "approval-1");
+        assert_eq!(observed["frame"]["value"], "Approve");
     }
 
     #[tokio::test]

@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import { isTauriRuntime } from "../lib/tauri.ts";
 import {
+  normalizeLocalCompanionUrl,
   selectActiveSession,
   useSessionStore,
 } from "../session/session-store.ts";
@@ -15,6 +16,7 @@ export const CompanionPanel = () => {
   const setActiveCompanion = useSessionStore((state) => state.setActiveCompanion);
   const [manualUrl, setManualUrl] = useState("http://localhost:50099");
   const [frameError, setFrameError] = useState<string | null>(null);
+  const [urlError, setUrlError] = useState<string | null>(null);
 
   const companions = useMemo(() => {
     if (!session) return [];
@@ -42,8 +44,12 @@ export const CompanionPanel = () => {
   };
 
   const attachManual = () => {
-    const url = manualUrl.trim();
-    if (!url) return;
+    const url = normalizeLocalCompanionUrl(manualUrl);
+    if (!url) {
+      setUrlError("Use an HTTP(S) URL on localhost, 127.0.0.1, 0.0.0.0, or ::1.");
+      return;
+    }
+    setUrlError(null);
     const id = `${session.id}-${url}`;
     // store via set on companions through a lightweight local merge using launch path:
     useSessionStore.setState((state) => {
@@ -78,7 +84,10 @@ export const CompanionPanel = () => {
             <input
               value={manualUrl}
               spellCheck={false}
-              onChange={(e) => setManualUrl(e.target.value)}
+              onChange={(e) => {
+                setManualUrl(e.target.value);
+                setUrlError(null);
+              }}
               placeholder="http://localhost:PORT"
             />
             <button type="button" className="panel-button" onClick={attachManual}>
@@ -86,6 +95,11 @@ export const CompanionPanel = () => {
             </button>
           </div>
         </label>
+        {urlError ? (
+          <p className="panel-feedback panel-feedback--error" role="alert">
+            {urlError}
+          </p>
+        ) : null}
         <div className="companion-panel__tabs" role="tablist" aria-label="Detected companions">
           {companions.map((item) => (
             <button

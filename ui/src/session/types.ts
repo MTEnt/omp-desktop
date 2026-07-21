@@ -69,6 +69,41 @@ export interface SetupStatus {
   homeDir?: string | null;
 }
 
+export interface ExtensionUiRequest {
+  id: string;
+  method:
+    | "select"
+    | "confirm"
+    | "input"
+    | "editor"
+    | "cancel"
+    | "notify"
+    | "setStatus"
+    | "setWidget"
+    | "setTitle"
+    | "set_editor_text"
+    | "open_url";
+  title?: string;
+  message?: string;
+  placeholder?: string;
+  prefill?: string;
+  options?: string[];
+  timeout?: number;
+  targetId?: string;
+  url?: string;
+  launchUrl?: string;
+  instructions?: string;
+  notifyType?: "info" | "warning" | "error";
+  statusKey?: string;
+  statusText?: string;
+  text?: string;
+}
+
+export type ExtensionUiResponse =
+  | { value: string }
+  | { confirmed: boolean }
+  | { cancelled: true; timedOut?: boolean };
+
 export type TranscriptItem =
   | { id: string; kind: "user"; text: string }
   | { id: string; kind: "assistant"; text: string; thinking?: string; responseId?: string }

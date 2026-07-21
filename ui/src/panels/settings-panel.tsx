@@ -4,7 +4,7 @@ import { useSessionStore } from "../session/session-store.ts";
 import type { AppSettings, ApprovalMode } from "../session/types.ts";
 
 const defaultSettings: AppSettings = {
-  approvalMode: "yolo",
+  approvalMode: "write",
   ompBinary: null,
   defaultModel: null,
   defaultThinking: null,
@@ -58,9 +58,9 @@ export const SettingsPanel = () => {
             }))
           }
         >
-          <option value="yolo">Yolo — auto approve</option>
-          <option value="write">Write — approve writes</option>
-          <option value="alwaysAsk">Always ask</option>
+          <option value="write">Write — ask before commands (recommended)</option>
+          <option value="alwaysAsk">Always ask — ask before writes and commands</option>
+          <option value="yolo">Yolo — approve every tool</option>
         </select>
       </label>
 

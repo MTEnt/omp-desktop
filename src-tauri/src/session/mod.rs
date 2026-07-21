@@ -6,6 +6,7 @@ use crate::ssh::{self, RemoteSessionInfo, RemoteTarget};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use std::collections::HashMap;
+use std::fs;
 use std::path::{Path, PathBuf};
 use tokio::sync::mpsc::UnboundedReceiver;
 use tokio::time::Duration;
@@ -23,6 +24,39 @@ pub struct SessionInfo {
     pub remote: Option<RemoteSessionInfo>,
 }
 
+impl SessionInfo {
+    pub fn project_key(&self) -> String {
+        let Some(remote) = &self.remote else {
+            return memory::project_key(&self.cwd);
+        };
+        let remote_root = remote.remote_cwd.trim();
+        let remote_root = if remote_root.is_empty() {
+            "~"
+        } else {
+            remote_root
+        };
+        let separator = if remote_root.starts_with('/') {
+            ""
+        } else {
+            "/"
+        };
+        format!("ssh://{}{separator}{remote_root}", remote.host_name)
+    }
+
+    pub fn project_label(&self) -> String {
+        let Some(remote) = &self.remote else {
+            return memory::project_label(&self.cwd);
+        };
+        let folder = remote
+            .remote_cwd
+            .trim_end_matches('/')
+            .rsplit('/')
+            .find(|part| !part.is_empty())
+            .unwrap_or("~");
+        format!("{}:{folder}", remote.host_name)
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub enum SessionStatus {
@@ -32,10 +66,34 @@ pub enum SessionStatus {
     Exited,
 }
 
+#[derive(Debug, Default)]
+struct SessionArtifacts {
+    paths: Vec<PathBuf>,
+}
+
+impl SessionArtifacts {
+    fn track(&mut self, path: PathBuf) {
+        self.paths.push(path);
+    }
+}
+
+impl Drop for SessionArtifacts {
+    fn drop(&mut self) {
+        for path in self.paths.iter().rev() {
+            if path.is_dir() {
+                let _ = fs::remove_dir_all(path);
+            } else {
+                let _ = fs::remove_file(path);
+            }
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct SessionTab {
     pub info: SessionInfo,
     pub rpc: RpcClient,
+    _artifacts: SessionArtifacts,
 }
 
 #[derive(Debug)]
@@ -62,15 +120,26 @@ impl SessionManager {
     ) -> AppResult<SessionInfo> {
         let id = Uuid::new_v4().to_string();
         let mut session_cwd = cwd;
+        let mut artifacts = SessionArtifacts::default();
         let mut remote_info = None;
         if let Some(target) = remote.as_ref() {
             let workspace = ssh::prepare_remote_workspace(&id, target)?;
+            artifacts.track(workspace.clone());
             session_cwd = workspace;
-            remote_info = Some(ssh::to_remote_session_info(target, Some(target.remote_cwd.clone())));
+            remote_info = Some(ssh::to_remote_session_info(
+                target,
+                Some(target.remote_cwd.clone()),
+            ));
         }
         let overlay_path = std::env::temp_dir().join(format!("omp-desktop-memory-{id}.yml"));
+        artifacts.track(overlay_path.clone());
         memory::write_mnemopi_overlay(&overlay_path)?;
-        let args = build_omp_args(&session_cwd, &self.settings, resume.as_deref(), Some(&overlay_path));
+        let args = build_omp_args(
+            &session_cwd,
+            &self.settings,
+            resume.as_deref(),
+            Some(&overlay_path),
+        );
         let rpc = RpcClient::spawn(&self.omp_bin, &args).await?;
         rpc.wait_ready(Duration::from_secs(30)).await?;
 
@@ -97,6 +166,7 @@ impl SessionManager {
             SessionTab {
                 info: info.clone(),
                 rpc,
+                _artifacts: artifacts,
             },
         );
         Ok(info)
@@ -137,10 +207,6 @@ impl SessionManager {
             .map(|remote| remote.to_target())
     }
 
-    pub fn session_info(&self, session_id: &str) -> Option<SessionInfo> {
-        self.tabs.get(session_id).map(|tab| tab.info.clone())
-    }
-
     pub async fn rpc_command(
         &mut self,
         session_id: &str,
@@ -148,6 +214,23 @@ impl SessionManager {
         params: Value,
     ) -> AppResult<Value> {
         self.get_mut(session_id)?.rpc.request(command, params).await
+    }
+    pub async fn respond_extension_ui(
+        &mut self,
+        session_id: &str,
+        request_id: &str,
+        response: Value,
+    ) -> AppResult<()> {
+        let mut frame = response
+            .as_object()
+            .cloned()
+            .ok_or_else(|| AppError::from("extension UI response must be a JSON object"))?;
+        frame.insert("type".into(), Value::String("extension_ui_response".into()));
+        frame.insert("id".into(), Value::String(request_id.into()));
+        self.get_mut(session_id)?
+            .rpc
+            .send_frame(Value::Object(frame))
+            .await
     }
 
     pub async fn close(&mut self, session_id: &str) -> AppResult<()> {
@@ -161,14 +244,21 @@ impl SessionManager {
         self.tabs.values().map(|tab| tab.info.clone()).collect()
     }
 
+    pub fn mark_exited(&mut self, session_id: &str) {
+        if let Some(tab) = self.tabs.get_mut(session_id) {
+            tab.info.status = SessionStatus::Exited;
+        }
+    }
+
     pub fn take_events(&mut self, session_id: &str) -> Option<UnboundedReceiver<Value>> {
         self.tabs
             .get_mut(session_id)
             .and_then(|tab| tab.rpc.take_events())
     }
 
-    pub fn set_settings(&mut self, settings: AppSettings) {
+    pub fn set_settings(&mut self, settings: AppSettings, omp_bin: PathBuf) {
         self.settings = settings;
+        self.omp_bin = omp_bin;
     }
 
     fn get_mut(&mut self, session_id: &str) -> AppResult<&mut SessionTab> {
@@ -229,15 +319,15 @@ mod tests {
     use tokio::time::{timeout, Duration};
 
     #[test]
-    fn yolo_args_include_auto_approve() {
+    fn safe_default_does_not_auto_approve_commands() {
         let settings = AppSettings::default();
         let args = build_omp_args(Path::new("/tmp/proj"), &settings, None, None);
 
         assert!(args.windows(2).any(|args| args == ["--mode", "rpc"]));
         assert!(args
             .windows(2)
-            .any(|args| args == ["--approval-mode", "yolo"]));
-        assert!(args.iter().any(|arg| arg == "--auto-approve"));
+            .any(|args| args == ["--approval-mode", "write"]));
+        assert!(!args.iter().any(|arg| arg == "--auto-approve"));
     }
 
     #[test]
@@ -296,6 +386,29 @@ mod tests {
         );
     }
 
+    #[test]
+    fn remote_project_identity_ignores_ephemeral_workspace() {
+        let info = SessionInfo {
+            id: "session-remote".into(),
+            title: "production".into(),
+            cwd: PathBuf::from("/tmp/omp-desktop/remote-sessions/random"),
+            profile: None,
+            status: SessionStatus::Ready,
+            remote: Some(RemoteSessionInfo {
+                host_name: "production".into(),
+                host: "example.com".into(),
+                user: Some("deploy".into()),
+                port: Some(22),
+                key_path: None,
+                remote_cwd: "/srv/apps/website".into(),
+                label: "deploy@example.com:/srv/apps/website".into(),
+            }),
+        };
+
+        assert_eq!(info.project_key(), "ssh://production/srv/apps/website");
+        assert_eq!(info.project_label(), "production:website");
+    }
+
     fn temp_dir() -> PathBuf {
         let unique = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -341,10 +454,15 @@ input.on("line", (line) => {
         let root = temp_dir();
         let cwd = root.join("my-project");
         fs::create_dir(&cwd).unwrap();
-        let mut manager = SessionManager::new(AppSettings::default(), mock_omp(&root));
-        let mut settings = AppSettings::default();
-        settings.default_profile = Some("work".into());
-        manager.set_settings(settings);
+        let omp_bin = mock_omp(&root);
+        let mut manager = SessionManager::new(AppSettings::default(), omp_bin.clone());
+        manager.set_settings(
+            AppSettings {
+                default_profile: Some("work".into()),
+                ..AppSettings::default()
+            },
+            omp_bin,
+        );
 
         let info = manager
             .create_session(cwd.clone(), Some("previous-session".into()), None)
@@ -385,10 +503,24 @@ input.on("line", (line) => {
             .rpc_command(&info.id, "set_model", json!({ "model": "opus" }))
             .await
             .unwrap();
+        manager.mark_exited(&info.id);
+        assert_eq!(
+            manager
+                .list()
+                .into_iter()
+                .find(|session| session.id == info.id)
+                .map(|session| session.status),
+            Some(SessionStatus::Exited),
+        );
+
         assert_eq!(generic["command"], "set_model");
         assert_eq!(generic["data"]["model"], "opus");
 
+        let overlay = std::env::temp_dir().join(format!("omp-desktop-memory-{}.yml", info.id));
+        assert!(overlay.is_file());
+
         manager.close(&info.id).await.unwrap();
+        assert!(!overlay.exists());
         assert!(manager.list().is_empty());
         assert!(manager.take_events(&info.id).is_none());
         assert!(manager.get_state(&info.id).await.is_err());

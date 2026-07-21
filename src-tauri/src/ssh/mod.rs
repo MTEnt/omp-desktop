@@ -1,4 +1,5 @@
 use crate::error::{AppError, AppResult};
+use crate::settings;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::fs;
@@ -49,7 +50,6 @@ pub struct SshProbeResult {
     pub message: String,
     pub remote_cwd: Option<String>,
 }
-
 
 #[derive(Debug, Deserialize)]
 struct OmpSshListJson {
@@ -105,10 +105,12 @@ pub fn list_hosts(omp_bin: &Path) -> AppResult<Vec<SshHostInfo>> {
     let mut by_name: BTreeMap<String, SshHostInfo> = BTreeMap::new();
 
     // 1) omp ssh list --json (user + project relative to process cwd)
-    if let Ok(output) = Command::new(omp_bin)
-        .args(["ssh", "list", "--json"])
-        .output()
-    {
+    let mut omp_command = Command::new(omp_bin);
+    omp_command.args(["ssh", "list", "--json"]);
+    if let Some(path) = settings::runtime_command_path(omp_bin) {
+        omp_command.env("PATH", path);
+    }
+    if let Ok(output) = omp_command.output() {
         if output.status.success() {
             if let Ok(parsed) = serde_json::from_slice::<OmpSshListJson>(&output.stdout) {
                 for (name, entry) in parsed.user {
@@ -267,46 +269,69 @@ fn glob_match(pattern: &str, name: &str) -> bool {
     pattern == name
 }
 
-/// Minimal OpenSSH config parser for concrete Host blocks.
+fn ssh_host_pattern_matches(pattern: &str, name: &str) -> bool {
+    let pattern = pattern.as_bytes();
+    let name = name.as_bytes();
+    let mut previous = vec![false; name.len() + 1];
+    previous[0] = true;
+    let mut next = vec![false; name.len() + 1];
 
-pub fn parse_ssh_config(raw: &str) -> Vec<SshHostInfo> {
-    let mut out = Vec::new();
-    let mut current_names: Vec<String> = Vec::new();
-    let mut host: Option<String> = None;
-    let mut user: Option<String> = None;
-    let mut port: Option<u16> = None;
-    let mut key_path: Option<String> = None;
-
-    let flush = |names: &mut Vec<String>,
-                 host: &mut Option<String>,
-                 user: &mut Option<String>,
-                 port: &mut Option<u16>,
-                 key_path: &mut Option<String>,
-                 out: &mut Vec<SshHostInfo>| {
-        if names.is_empty() {
-            return;
-        }
-        let hostname = host.clone().unwrap_or_else(|| names[0].clone());
-        for name in names.drain(..) {
-            if name.contains('*') || name.contains('?') || name.starts_with('!') {
-                continue;
+    for token in pattern {
+        next.fill(false);
+        match token {
+            b'*' => {
+                let mut matched = false;
+                for index in 0..=name.len() {
+                    matched |= previous[index];
+                    next[index] = matched;
+                }
             }
-            out.push(SshHostInfo {
-                name: name.clone(),
-                host: hostname.clone(),
-                user: user.clone(),
-                port: *port,
-                key_path: key_path.clone(),
-                description: Some("from ~/.ssh/config".into()),
-                source: "ssh_config".into(),
-                scope: None,
-            });
+            b'?' => {
+                next[1..(name.len() + 1)].copy_from_slice(&previous[..name.len()]);
+            }
+            expected => {
+                for index in 0..name.len() {
+                    next[index + 1] =
+                        previous[index] && expected.eq_ignore_ascii_case(&name[index]);
+                }
+            }
         }
-        *host = None;
-        *user = None;
-        *port = None;
-        *key_path = None;
+        std::mem::swap(&mut previous, &mut next);
+    }
+    previous[name.len()]
+}
+
+fn ssh_host_block_matches(patterns: &[String], name: &str) -> bool {
+    let mut positive_match = false;
+    for pattern in patterns {
+        if let Some(negated) = pattern.strip_prefix('!') {
+            if ssh_host_pattern_matches(negated, name) {
+                return false;
+            }
+        } else if ssh_host_pattern_matches(pattern, name) {
+            positive_match = true;
+        }
+    }
+    positive_match
+}
+
+/// Minimal OpenSSH config parser for concrete Host blocks.
+pub fn parse_ssh_config(raw: &str) -> Vec<SshHostInfo> {
+    #[derive(Default)]
+    struct Block {
+        patterns: Vec<String>,
+        host: Option<String>,
+        user: Option<String>,
+        port: Option<u16>,
+        key_path: Option<String>,
+    }
+
+    let mut blocks = Vec::new();
+    let mut current = Block {
+        patterns: vec!["*".into()],
+        ..Block::default()
     };
+    let mut saw_host_block = false;
 
     for line in raw.lines() {
         let trimmed = line.trim();
@@ -315,23 +340,24 @@ pub fn parse_ssh_config(raw: &str) -> Vec<SshHostInfo> {
         }
         let lower = trimmed.to_ascii_lowercase();
         if lower.starts_with("host ") {
-            flush(
-                &mut current_names,
-                &mut host,
-                &mut user,
-                &mut port,
-                &mut key_path,
-                &mut out,
-            );
-            current_names = trimmed[5..]
-                .split_whitespace()
-                .map(str::to_string)
-                .collect();
+            let has_global_values = current.host.is_some()
+                || current.user.is_some()
+                || current.port.is_some()
+                || current.key_path.is_some();
+            if saw_host_block || has_global_values {
+                blocks.push(current);
+            }
+            current = Block {
+                patterns: trimmed[5..]
+                    .split_whitespace()
+                    .map(str::to_string)
+                    .collect(),
+                ..Block::default()
+            };
+            saw_host_block = true;
             continue;
         }
-        if current_names.is_empty() {
-            continue;
-        }
+
         let mut parts = trimmed.splitn(2, char::is_whitespace);
         let key = parts.next().unwrap_or("").to_ascii_lowercase();
         let value = parts.next().unwrap_or("").trim();
@@ -339,29 +365,76 @@ pub fn parse_ssh_config(raw: &str) -> Vec<SshHostInfo> {
             continue;
         }
         match key.as_str() {
-            "hostname" => host = Some(value.to_string()),
-            "user" => user = Some(value.to_string()),
+            "hostname" => current.host = Some(value.to_string()),
+            "user" => current.user = Some(value.to_string()),
             "port" => {
-                if let Ok(p) = value.parse::<u16>() {
-                    port = Some(p);
+                if let Ok(port) = value.parse::<u16>() {
+                    current.port = Some(port);
                 }
             }
-            "identityfile" => {
-                let expanded = expand_tilde(value);
-                key_path = Some(expanded);
-            }
+            "identityfile" => current.key_path = Some(expand_tilde(value)),
             _ => {}
         }
     }
-    flush(
-        &mut current_names,
-        &mut host,
-        &mut user,
-        &mut port,
-        &mut key_path,
-        &mut out,
-    );
-    out
+    if saw_host_block
+        || current.host.is_some()
+        || current.user.is_some()
+        || current.port.is_some()
+        || current.key_path.is_some()
+    {
+        blocks.push(current);
+    }
+
+    let mut names = Vec::new();
+    for block in &blocks {
+        for pattern in &block.patterns {
+            if pattern.starts_with('!')
+                || pattern.contains('*')
+                || pattern.contains('?')
+                || names.contains(pattern)
+            {
+                continue;
+            }
+            names.push(pattern.clone());
+        }
+    }
+
+    names
+        .into_iter()
+        .map(|name| {
+            let mut host = None;
+            let mut user = None;
+            let mut port = None;
+            let mut key_path = None;
+            for block in &blocks {
+                if !ssh_host_block_matches(&block.patterns, &name) {
+                    continue;
+                }
+                if host.is_none() {
+                    host.clone_from(&block.host);
+                }
+                if user.is_none() {
+                    user.clone_from(&block.user);
+                }
+                if port.is_none() {
+                    port = block.port;
+                }
+                if key_path.is_none() {
+                    key_path.clone_from(&block.key_path);
+                }
+            }
+            SshHostInfo {
+                host: host.unwrap_or_else(|| name.clone()).replace("%h", &name),
+                name,
+                user,
+                port,
+                key_path,
+                description: Some("from ~/.ssh/config".into()),
+                source: "ssh_config".into(),
+                scope: None,
+            }
+        })
+        .collect()
 }
 
 fn expand_tilde(value: &str) -> String {
@@ -396,8 +469,8 @@ pub fn add_user_host(
             .map_err(|e| AppError::Msg(format!("create ssh config dir: {e}")))?;
     }
     let mut file = if path.is_file() {
-        let raw = fs::read_to_string(&path)
-            .map_err(|e| AppError::Msg(format!("read ssh.json: {e}")))?;
+        let raw =
+            fs::read_to_string(&path).map_err(|e| AppError::Msg(format!("read ssh.json: {e}")))?;
         serde_json::from_str::<OmpSshFile>(&raw)
             .map_err(|e| AppError::Msg(format!("parse ssh.json: {e}")))?
     } else {
@@ -410,7 +483,10 @@ pub fn add_user_host(
     }
     let entry = OmpHostWrite {
         host: host.trim().to_string(),
-        username: user.map(str::trim).filter(|s| !s.is_empty()).map(str::to_string),
+        username: user
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(str::to_string),
         port,
         key_path: key_path
             .map(str::trim)
@@ -485,6 +561,7 @@ fn build_ssh_args(target: &RemoteTarget) -> Vec<String> {
     }
     // Prefer Host alias from ssh config when name differs and host equals name
     // Always pass explicit destination user@host for reliability.
+    args.push("--".into());
     args.push(ssh_destination(target));
     args
 }
@@ -555,27 +632,25 @@ pub fn prepare_remote_workspace(session_id: &str, target: &RemoteTarget) -> AppR
         .join("remote-sessions")
         .join(session_id);
     fs::create_dir_all(&base)
-        .map_err(|e| AppError::Msg(format!("create remote workspace: {e}")))?;
+        .map_err(|error| AppError::Msg(format!("create remote workspace: {error}")))?;
 
     let label = remote_label(target);
-    let dest = ssh_destination(target);
-    let agents = remote_bootstrap_message(target).replace(
-        "REMOTE SSH SESSION ACTIVE",
-        "# Remote SSH session",
-    );
+    let agents = remote_bootstrap_message(target)
+        .replace("REMOTE SSH SESSION ACTIVE", "# Remote SSH session");
+    if let Err(error) = fs::write(base.join("AGENTS.md"), agents) {
+        let _ = fs::remove_dir_all(&base);
+        return Err(AppError::Msg(format!("write remote AGENTS.md: {error}")));
+    }
 
-    fs::write(base.join("AGENTS.md"), agents)
-        .map_err(|e| AppError::Msg(format!("write remote AGENTS.md: {e}")))?;
-
-    let readme = format!(
-        "Remote workspace stub for OMP Desktop session {session_id}.\nRemote: {label}\n"
-    );
-    fs::write(base.join("README-remote.txt"), readme)
-        .map_err(|e| AppError::Msg(format!("write remote readme: {e}")))?;
+    let readme =
+        format!("Remote workspace stub for OMP Desktop session {session_id}.\nRemote: {label}\n");
+    if let Err(error) = fs::write(base.join("README-remote.txt"), readme) {
+        let _ = fs::remove_dir_all(&base);
+        return Err(AppError::Msg(format!("write remote readme: {error}")));
+    }
 
     // Ensure host exists in user omp ssh.json so agent discovery finds it.
     let _ = ensure_host_registered(target);
-
     Ok(base)
 }
 
@@ -602,7 +677,10 @@ fn ensure_host_registered(target: &RemoteTarget) -> AppResult<()> {
     Ok(())
 }
 
-pub fn to_remote_session_info(target: &RemoteTarget, resolved_cwd: Option<String>) -> RemoteSessionInfo {
+pub fn to_remote_session_info(
+    target: &RemoteTarget,
+    resolved_cwd: Option<String>,
+) -> RemoteSessionInfo {
     let mut t = target.clone();
     if let Some(cwd) = resolved_cwd {
         t.remote_cwd = cwd;
@@ -630,7 +708,6 @@ impl RemoteSessionInfo {
         }
     }
 }
-
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -775,21 +852,34 @@ done",
         }
         if let Some(rest) = line.strip_prefix("D|") {
             let name = rest.to_string();
-            if name == "." || name == ".." { continue; }
+            if name == "." || name == ".." {
+                continue;
+            }
             let path = join_remote_path(&resolved, &name);
-            entries.push(RemoteDirEntry { name, path, is_dir: true });
+            entries.push(RemoteDirEntry {
+                name,
+                path,
+                is_dir: true,
+            });
             continue;
         }
         if let Some(rest) = line.strip_prefix("F|") {
             let name = rest.to_string();
             let path = join_remote_path(&resolved, &name);
-            entries.push(RemoteDirEntry { name, path, is_dir: false });
+            entries.push(RemoteDirEntry {
+                name,
+                path,
+                is_dir: false,
+            });
         }
     }
     entries.sort_by(|a, b| match (a.is_dir, b.is_dir) {
         (true, false) => std::cmp::Ordering::Less,
         (false, true) => std::cmp::Ordering::Greater,
-        _ => a.name.to_ascii_lowercase().cmp(&b.name.to_ascii_lowercase()),
+        _ => a
+            .name
+            .to_ascii_lowercase()
+            .cmp(&b.name.to_ascii_lowercase()),
     });
     Ok(RemoteDirListing {
         path: resolved,
@@ -870,6 +960,30 @@ Host *.skip
     }
 
     #[test]
+    fn concrete_hosts_inherit_wildcard_defaults() {
+        let raw = r#"
+Host production
+  HostName prod.example.com
+
+Host *
+  User deploy
+  Port 2202
+  IdentityFile ~/.ssh/id_ed25519
+"#;
+
+        let hosts = parse_ssh_config(raw);
+        assert_eq!(hosts.len(), 1);
+        assert_eq!(hosts[0].name, "production");
+        assert_eq!(hosts[0].host, "prod.example.com");
+        assert_eq!(hosts[0].user.as_deref(), Some("deploy"));
+        assert_eq!(hosts[0].port, Some(2202));
+        assert!(hosts[0]
+            .key_path
+            .as_deref()
+            .unwrap_or_default()
+            .contains(".ssh/id_ed25519"));
+    }
+
     #[test]
     fn follows_include_directives() {
         let dir = std::env::temp_dir().join(format!(
@@ -889,7 +1003,10 @@ Host *.skip
         let main = dir.join("config");
         fs::write(
             &main,
-            format!("Include {}\n\nHost local-only\n  HostName 127.0.0.1\n", included.display()),
+            format!(
+                "Include {}\n\nHost local-only\n  HostName 127.0.0.1\n",
+                included.display()
+            ),
         )
         .unwrap();
         let hosts = load_ssh_config_hosts(&main);
@@ -911,5 +1028,11 @@ Host *.skip
         };
         assert_eq!(ssh_destination(&t), "ubuntu@10.0.0.5");
         assert_eq!(remote_label(&t), "ubuntu@10.0.0.5:/var/www");
+        let args = build_ssh_args(&t);
+        let terminator = args.iter().position(|arg| arg == "--").unwrap();
+        assert_eq!(
+            args.get(terminator + 1).map(String::as_str),
+            Some("ubuntu@10.0.0.5"),
+        );
     }
 }

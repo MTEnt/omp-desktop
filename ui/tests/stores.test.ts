@@ -3,6 +3,9 @@ import { beforeEach, describe, it } from "node:test";
 
 import { useLayoutStore } from "../src/app/layout-store.ts";
 import {
+  normalizeLocalCompanionUrl,
+  projectKeyForSession,
+  projectLabelForSession,
   readSessionRuntimeStatus,
   selectActiveTranscript,
   useSessionStore,
@@ -30,6 +33,7 @@ beforeEach(() => {
     states: {},
     error: null,
     streaming: {},
+    extensionUiRequests: {},
   });
 });
 
@@ -64,6 +68,8 @@ describe("session runtime status", () => {
       }),
       {
         model: "claude-sonnet-4",
+        modelId: "claude-sonnet-4",
+        provider: null,
         thinkingLevel: "high",
         contextPercent: 42.4,
       },
@@ -73,14 +79,92 @@ describe("session runtime status", () => {
   it("falls back to placeholders for missing or malformed runtime details", () => {
     assert.deepEqual(readSessionRuntimeStatus({ data: { contextUsage: {} } }), {
       model: null,
+      modelId: null,
+      provider: null,
       thinkingLevel: null,
       contextPercent: null,
     });
     assert.deepEqual(readSessionRuntimeStatus(null), {
       model: null,
+      modelId: null,
+      provider: null,
       thinkingLevel: null,
       contextPercent: null,
     });
+  });
+});
+
+describe("companion URL policy", () => {
+  it("accepts only local HTTP companion URLs", () => {
+    assert.equal(
+      normalizeLocalCompanionUrl(" http://localhost:50099/compare?pick=a "),
+      "http://localhost:50099/compare?pick=a",
+    );
+    assert.equal(
+      normalizeLocalCompanionUrl("https://127.0.0.1:8443/"),
+      "https://127.0.0.1:8443/",
+    );
+    assert.equal(
+      normalizeLocalCompanionUrl("http://[::1]:5173/design"),
+      "http://[::1]:5173/design",
+    );
+
+    for (const unsafe of [
+      "javascript:alert(document.domain)",
+      "data:text/html,<script>alert(1)</script>",
+      "https://example.com",
+      "http://localhost.evil.example",
+      "http://user:secret@localhost:50099",
+    ]) {
+      assert.equal(normalizeLocalCompanionUrl(unsafe), null, unsafe);
+    }
+  });
+});
+
+describe("project identity", () => {
+  it("uses a stable SSH host and remote root instead of the local stub", () => {
+    const remoteSession = {
+      id: "remote-1",
+      title: "production",
+      cwd: "/tmp/omp-desktop/remote-sessions/random-id",
+      profile: null,
+      status: "ready" as const,
+      remote: {
+        hostName: "production",
+        host: "example.com",
+        user: "deploy",
+        port: 22,
+        keyPath: null,
+        remoteCwd: "/srv/apps/website",
+        label: "deploy@example.com:/srv/apps/website",
+      },
+    };
+
+    assert.equal(
+      projectKeyForSession(remoteSession),
+      "ssh://production/srv/apps/website",
+    );
+    assert.equal(projectLabelForSession(remoteSession), "production:website");
+    assert.equal(
+      projectKeyForSession({
+        ...remoteSession,
+        id: "remote-2",
+        cwd: "/tmp/omp-desktop/remote-sessions/another-id",
+      }),
+      "ssh://production/srv/apps/website",
+    );
+  });
+
+  it("normalizes local project paths across platforms", () => {
+    const localSession = {
+      id: "local-1",
+      title: "project",
+      cwd: String.raw`C:\Users\dev\project`,
+      profile: null,
+      status: "ready" as const,
+    };
+    assert.equal(projectKeyForSession(localSession), "C:/Users/dev/project");
+    assert.equal(projectLabelForSession(localSession), "project");
   });
 });
 
@@ -99,6 +183,20 @@ describe("session event reducer", () => {
 
     assert.deepEqual(useSessionStore.getState().transcripts["session-1"], [
       { id: "assistant-1", kind: "assistant", text: "Hello" },
+    ]);
+  });
+
+  it("omits absent optional metadata from completed assistant messages", () => {
+    useSessionStore.getState().applyOmpEvent("session-1", {
+      type: "message_end",
+      message: {
+        role: "assistant",
+        content: [{ type: "text", text: "Complete" }],
+      },
+    });
+
+    assert.deepEqual(useSessionStore.getState().transcripts["session-1"], [
+      { id: "assistant-1", kind: "assistant", text: "Complete" },
     ]);
   });
 
@@ -145,6 +243,66 @@ describe("session event reducer", () => {
     assert.equal(useSessionStore.getState().sessions[0]?.status, "exited");
     assert.equal(useSessionStore.getState().streaming["session-1"], false);
   });
+  it("queues extension UI approvals and returns the selected response", async () => {
+    const originalRespond = api.respondExtensionUi;
+    const responses: unknown[] = [];
+    api.respondExtensionUi = async (sessionId, requestId, response) => {
+      responses.push({ sessionId, requestId, response });
+    };
+
+    try {
+      useSessionStore.getState().applyOmpEvent("session-1", {
+        type: "extension_ui_request",
+        id: "approval-1",
+        method: "select",
+        title: "Run bash?",
+        options: ["Approve", "Deny"],
+      });
+      assert.deepEqual(
+        useSessionStore.getState().extensionUiRequests["session-1"],
+        [
+          {
+            id: "approval-1",
+            method: "select",
+            title: "Run bash?",
+            message: undefined,
+            placeholder: undefined,
+            prefill: undefined,
+            options: ["Approve", "Deny"],
+            timeout: undefined,
+            targetId: undefined,
+            url: undefined,
+            launchUrl: undefined,
+            instructions: undefined,
+            notifyType: undefined,
+            statusKey: undefined,
+            statusText: undefined,
+            text: undefined,
+          },
+        ],
+      );
+
+      const answered = await useSessionStore
+        .getState()
+        .respondExtensionUi("session-1", "approval-1", { value: "Approve" });
+      assert.equal(answered, true);
+    } finally {
+      api.respondExtensionUi = originalRespond;
+    }
+
+    assert.deepEqual(responses, [
+      {
+        sessionId: "session-1",
+        requestId: "approval-1",
+        response: { value: "Approve" },
+      },
+    ]);
+    assert.deepEqual(
+      useSessionStore.getState().extensionUiRequests["session-1"],
+      [],
+    );
+  });
+
 });
 
 describe("session commands", () => {
@@ -199,6 +357,61 @@ describe("session commands", () => {
       {
         cwd: "/tmp/resumed-project",
         resume: "session-history.jsonl",
+      },
+    ]);
+  });
+
+  it("preserves the SSH identity when restarting a remote session", async () => {
+    const originalCloseSession = api.closeSession;
+    const originalCreateSshSession = api.createSshSession;
+    const requestedTargets: Parameters<typeof api.createSshSession>[0][] = [];
+    api.closeSession = async () => {};
+    api.createSshSession = async (remote) => {
+      requestedTargets.push(remote);
+      return {
+        id: "session-restarted",
+        title: "remote-project",
+        cwd: "/tmp/remote-session",
+        profile: null,
+        status: "ready",
+        remote: {
+          ...remote,
+          label: "deploy@example.com:/srv/project",
+        },
+      };
+    };
+    useSessionStore.setState((state) => ({
+      sessions: [
+        {
+          ...state.sessions[0],
+          remote: {
+            hostName: "production",
+            host: "example.com",
+            user: "deploy",
+            port: 2222,
+            keyPath: "/Users/test/.ssh/deploy_ed25519",
+            remoteCwd: "/srv/project",
+            label: "deploy@example.com:/srv/project",
+          },
+        },
+      ],
+    }));
+
+    try {
+      await useSessionStore.getState().restartSession("session-1");
+    } finally {
+      api.closeSession = originalCloseSession;
+      api.createSshSession = originalCreateSshSession;
+    }
+
+    assert.deepEqual(requestedTargets, [
+      {
+        hostName: "production",
+        host: "example.com",
+        user: "deploy",
+        port: 2222,
+        keyPath: "/Users/test/.ssh/deploy_ed25519",
+        remoteCwd: "/srv/project",
       },
     ]);
   });

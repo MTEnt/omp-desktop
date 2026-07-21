@@ -1,11 +1,15 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { api } from "../lib/tauri.ts";
-import { selectActiveSession, useSessionStore } from "../session/session-store.ts";
+import {
+  projectKeyForSession,
+  projectLabelForSession,
+  selectActiveSession,
+  useSessionStore,
+} from "../session/session-store.ts";
 import type { JobCard, PersistentAgent } from "../session/types.ts";
 import { EmptyState } from "./empty-state.tsx";
 
-const projectKeyFromCwd = (cwd: string) => cwd.replaceAll("\\", "/");
 
 export const JobsPanel = () => {
   const session = useSessionStore(selectActiveSession);
@@ -15,27 +19,40 @@ export const JobsPanel = () => {
   const [title, setTitle] = useState("");
   const [detail, setDetail] = useState("");
   const [role, setRole] = useState("default");
+  const requestGeneration = useRef(0);
 
-  const projectKey = session ? projectKeyFromCwd(session.cwd) : null;
-  const projectLabel = session
-    ? session.cwd.split(/[\\/]/).filter(Boolean).at(-1) || session.title
-    : "project";
+  const projectKey = session ? projectKeyForSession(session) : null;
+  const projectLabel = session ? projectLabelForSession(session) : "project";
+  const queryKey = `${scope}\u0000${projectKey ?? ""}`;
+  const activeQueryKey = useRef(queryKey);
+  activeQueryKey.current = queryKey;
 
-  const reload = async () => {
+  const reload = useCallback(async () => {
+    const request = ++requestGeneration.current;
+    const requestedQuery = queryKey;
     const key = scope === "project" ? projectKey : null;
     const [nextJobs, nextAgents] = await Promise.all([
       api.listJobs(key),
       api.listAgents(key),
     ]);
+    if (
+      request !== requestGeneration.current ||
+      requestedQuery !== activeQueryKey.current
+    ) {
+      return;
+    }
     setJobs(nextJobs);
     setAgents(nextAgents);
-  };
+  }, [projectKey, queryKey, scope]);
 
   useEffect(() => {
     void reload().catch(console.warn);
     const timer = window.setInterval(() => void reload().catch(() => undefined), 8000);
-    return () => window.clearInterval(timer);
-  }, [projectKey, scope]);
+    return () => {
+      window.clearInterval(timer);
+      requestGeneration.current += 1;
+    };
+  }, [reload]);
 
   const grouped = useMemo(() => {
     const map = new Map<string, JobCard[]>();

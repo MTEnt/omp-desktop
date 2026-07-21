@@ -74,7 +74,7 @@ export const OnboardingWalkthrough = () => {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [approvalMode, setApprovalMode] = useState<ApprovalMode>(
-    settings?.approvalMode ?? "yolo",
+    settings?.approvalMode ?? "write",
   );
   const [ompBinary, setOmpBinary] = useState(settings?.ompBinary ?? "");
 
@@ -366,14 +366,14 @@ export const OnboardingWalkthrough = () => {
                     setApprovalMode(event.target.value as ApprovalMode)
                   }
                 >
-                  <option value="yolo">Yolo — auto approve (fastest)</option>
-                  <option value="write">Write — approve writes</option>
-                  <option value="alwaysAsk">Always ask</option>
+                  <option value="write">Write — ask before commands (recommended)</option>
+                  <option value="alwaysAsk">Always ask — ask before writes and commands</option>
+                  <option value="yolo">Yolo — approve every tool</option>
                 </select>
               </label>
               <p className="onboard-muted">
-                Yolo is the OMP Desktop default for local coding cockpits. Choose Always ask if you
-                want every tool gated.
+                Write is the safe default: OMP reads and edits normally, then asks before it runs
+                commands. Choose Always ask to gate edits too.
               </p>
             </div>
           )}

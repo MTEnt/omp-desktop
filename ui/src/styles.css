@@ -3638,3 +3638,220 @@ button:disabled {
   border-radius: 12px;
   background: #0b1016;
 }
+
+/* —— RPC approval and extension UI gate —— */
+.approval-dialog {
+  z-index: 240;
+}
+
+.approval-dialog__card {
+  width: min(720px, 100%);
+  padding: 0;
+  overflow: hidden;
+  border-radius: 14px;
+  border-color: color-mix(in srgb, #e0b567 42%, #2a3545);
+  background:
+    linear-gradient(180deg, rgba(224, 181, 103, 0.045), transparent 120px),
+    #0e141d;
+}
+
+.approval-dialog__header {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 18px 20px 16px;
+  border-bottom: 1px solid #273142;
+  background: rgba(10, 15, 22, 0.72);
+}
+
+.approval-dialog__header h1 {
+  margin: 3px 0 0;
+  color: #eef2f8;
+  font-size: 16px;
+  font-weight: 640;
+  line-height: 1.25;
+}
+
+.approval-dialog__gate {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  border: 1px solid rgba(224, 181, 103, 0.35);
+  border-radius: 9px;
+  background: rgba(224, 181, 103, 0.08);
+}
+
+.approval-dialog__gate::before {
+  width: 11px;
+  height: 9px;
+  border: 2px solid #e0b567;
+  border-bottom: 0;
+  border-radius: 7px 7px 0 0;
+  content: "";
+  transform: translateY(-4px);
+}
+
+.approval-dialog__gate span {
+  position: absolute;
+  width: 16px;
+  height: 13px;
+  margin-top: 7px;
+  border-radius: 3px;
+  background: #e0b567;
+  box-shadow: 0 0 18px rgba(224, 181, 103, 0.2);
+}
+
+.approval-dialog__queue {
+  align-self: start;
+  padding: 4px 7px;
+  border: 1px solid #344158;
+  border-radius: 999px;
+  color: #9dacbf;
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+.approval-dialog__prompt,
+.approval-dialog__message {
+  margin: 18px 20px;
+  max-height: min(46vh, 420px);
+  overflow: auto;
+  color: #cbd5e3;
+  font: 12.5px/1.58 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.approval-dialog__message {
+  font-family: inherit;
+  font-size: 13px;
+}
+
+.approval-dialog__options,
+.approval-dialog__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 9px;
+  padding: 0 20px 18px;
+}
+
+.approval-dialog__option {
+  min-width: 112px;
+  border: 1px solid #344158;
+  border-radius: 9px;
+  background: #151d29;
+  color: #dce4f0;
+  padding: 9px 14px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 620;
+  cursor: pointer;
+  transition:
+    background 120ms ease,
+    border-color 120ms ease,
+    color 120ms ease;
+}
+
+.approval-dialog__option:hover:not(:disabled),
+.approval-dialog__option:focus-visible {
+  border-color: #5b6e89;
+  background: #1b2635;
+}
+
+.approval-dialog__option--positive {
+  border-color: rgba(61, 214, 140, 0.5);
+  background: rgba(61, 214, 140, 0.13);
+  color: #aaf0ce;
+}
+
+.approval-dialog__option--positive:hover:not(:disabled),
+.approval-dialog__option--positive:focus-visible {
+  border-color: #3dd68c;
+  background: rgba(61, 214, 140, 0.2);
+}
+
+.approval-dialog__option--deny {
+  border-color: rgba(255, 111, 111, 0.36);
+  background: rgba(255, 111, 111, 0.07);
+  color: #ffb0b0;
+}
+
+.approval-dialog__option--deny:hover:not(:disabled),
+.approval-dialog__option--deny:focus-visible {
+  border-color: #ff7777;
+  background: rgba(255, 111, 111, 0.13);
+}
+
+.approval-dialog__option:disabled {
+  cursor: wait;
+  opacity: 0.58;
+}
+
+.approval-dialog__entry {
+  display: grid;
+  gap: 8px;
+  padding: 0 20px 18px;
+}
+
+.approval-dialog__entry label {
+  color: #98a8bd;
+  font-size: 11px;
+}
+
+.approval-dialog__entry textarea {
+  width: 100%;
+  min-height: 78px;
+  resize: vertical;
+  border: 1px solid #344158;
+  border-radius: 10px;
+  outline: none;
+  background: #090e15;
+  color: #e4eaf3;
+  padding: 11px 12px;
+  font: 12.5px/1.5 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+.approval-dialog__entry textarea:focus {
+  border-color: #e0b567;
+  box-shadow: 0 0 0 3px rgba(224, 181, 103, 0.1);
+}
+
+.approval-dialog__entry .approval-dialog__actions {
+  padding: 4px 0 0;
+}
+
+.approval-dialog__footer {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 20px;
+  border-top: 1px solid #202a39;
+  background: #0a0f16;
+  color: #6f7f94;
+  font-size: 10.5px;
+}
+
+@media (max-width: 640px) {
+  .approval-dialog__header {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .approval-dialog__queue {
+    display: none;
+  }
+
+  .approval-dialog__options,
+  .approval-dialog__actions {
+    flex-direction: column-reverse;
+  }
+
+  .approval-dialog__option {
+    width: 100%;
+  }
+
+  .approval-dialog__footer {
+    flex-direction: column;
+  }
+}

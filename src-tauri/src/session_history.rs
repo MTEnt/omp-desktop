@@ -135,10 +135,7 @@ fn rewrite_message_text_blocks(
     }
 }
 
-fn rewrite_provider_payload_text(
-    message: &mut serde_json::Map<String, Value>,
-    new_text: &str,
-) {
+fn rewrite_provider_payload_text(message: &mut serde_json::Map<String, Value>, new_text: &str) {
     let Some(payload) = message
         .get_mut("providerPayload")
         .and_then(Value::as_object_mut)

@@ -1,10 +1,13 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { api } from "../lib/tauri.ts";
-import { selectActiveSession, useSessionStore } from "../session/session-store.ts";
+import {
+  projectKeyForSession,
+  selectActiveSession,
+  useSessionStore,
+} from "../session/session-store.ts";
 import { EmptyState } from "./empty-state.tsx";
 
-const projectKeyFromCwd = (cwd: string) => cwd.replaceAll("\\", "/");
 
 export const ScratchpadPanel = () => {
   const session = useSessionStore(selectActiveSession);
@@ -14,6 +17,11 @@ export const ScratchpadPanel = () => {
   const [updatedAt, setUpdatedAt] = useState(0);
   const [saving, setSaving] = useState(false);
   const [dirty, setDirty] = useState(false);
+  const activeKey = useRef("");
+  const contentRef = useRef(content);
+  const dirtyRef = useRef(dirty);
+  const loadGeneration = useRef(0);
+  const saveGeneration = useRef(0);
 
   const roles = useMemo(() => {
     const set = new Set(modelRoles.map((item) => item.role));
@@ -24,24 +32,42 @@ export const ScratchpadPanel = () => {
     return [...set];
   }, [modelRoles]);
 
-  const projectKey = session ? projectKeyFromCwd(session.cwd) : null;
+  const projectKey = session ? projectKeyForSession(session) : null;
+  const editorKey = `${role}\u0000${projectKey ?? ""}`;
+  activeKey.current = editorKey;
+  contentRef.current = content;
+  dirtyRef.current = dirty;
 
   useEffect(() => {
-    if (!projectKey) {
-      setContent("");
-      setUpdatedAt(0);
-      setDirty(false);
-      return;
-    }
+    const request = ++loadGeneration.current;
+    saveGeneration.current += 1;
+    setSaving(false);
+    setContent("");
+    setUpdatedAt(0);
+    setDirty(false);
+    dirtyRef.current = false;
+    if (!projectKey) return;
+
     void api
       .getRoleScratchpad(role, projectKey)
       .then((pad) => {
+        if (
+          request !== loadGeneration.current ||
+          editorKey !== activeKey.current ||
+          dirtyRef.current
+        ) {
+          return;
+        }
         setContent(pad.content);
         setUpdatedAt(pad.updatedAt);
         setDirty(false);
+        dirtyRef.current = false;
       })
       .catch(console.warn);
-  }, [projectKey, role]);
+    return () => {
+      loadGeneration.current += 1;
+    };
+  }, [editorKey, projectKey, role]);
 
   if (!session || !projectKey) {
     return <EmptyState>Open a session to edit the role scratchpad.</EmptyState>;
@@ -64,14 +90,33 @@ export const ScratchpadPanel = () => {
           type="button"
           disabled={!dirty || saving}
           onClick={() => {
+            const request = ++saveGeneration.current;
+            const savedKey = editorKey;
+            const savedContent = content;
             setSaving(true);
             void api
-              .saveRoleScratchpad(role, projectKey, content)
+              .saveRoleScratchpad(role, projectKey, savedContent)
               .then((pad) => {
+                if (
+                  request !== saveGeneration.current ||
+                  savedKey !== activeKey.current ||
+                  savedContent !== contentRef.current
+                ) {
+                  return;
+                }
                 setUpdatedAt(pad.updatedAt);
                 setDirty(false);
+                dirtyRef.current = false;
               })
-              .finally(() => setSaving(false));
+              .catch(console.warn)
+              .finally(() => {
+                if (
+                  request === saveGeneration.current &&
+                  savedKey === activeKey.current
+                ) {
+                  setSaving(false);
+                }
+              });
           }}
         >
           {saving ? "Saving…" : dirty ? "Save scratchpad" : "Saved"}
@@ -85,8 +130,13 @@ export const ScratchpadPanel = () => {
         className="scratchpad-panel__editor"
         value={content}
         onChange={(e) => {
+          loadGeneration.current += 1;
+          saveGeneration.current += 1;
+          setSaving(false);
           setContent(e.target.value);
+          contentRef.current = e.target.value;
           setDirty(true);
+          dirtyRef.current = true;
         }}
         placeholder="What is this role working on? Blockers? Next steps?"
       />

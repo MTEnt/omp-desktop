@@ -61,7 +61,6 @@ pub struct JobCard {
 
 pub struct MemoryStore {
     conn: Mutex<Connection>,
-    path: PathBuf,
 }
 
 impl MemoryStore {
@@ -131,12 +130,7 @@ impl MemoryStore {
 
         Ok(Self {
             conn: Mutex::new(conn),
-            path,
         })
-    }
-
-    pub fn path(&self) -> &Path {
-        &self.path
     }
 
     pub fn list_role_notes(
@@ -314,6 +308,7 @@ impl MemoryStore {
         Ok(out)
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn upsert_agent(
         &self,
         id: &str,
@@ -411,6 +406,7 @@ impl MemoryStore {
         Ok(out)
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn upsert_job(
         &self,
         id: &str,

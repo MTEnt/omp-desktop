@@ -17,6 +17,26 @@ export const Composer = () => {
     setDraft("");
   }, [activeSessionId]);
 
+  useEffect(() => {
+    const setComposerText = (event: Event) => {
+      const detail = (
+        event as CustomEvent<{ sessionId?: string; text?: string }>
+      ).detail;
+      if (
+        detail?.sessionId === useSessionStore.getState().activeSessionId &&
+        typeof detail.text === "string"
+      ) {
+        setDraft(detail.text);
+      }
+    };
+    window.addEventListener("omp-desktop:set-composer-text", setComposerText);
+    return () =>
+      window.removeEventListener(
+        "omp-desktop:set-composer-text",
+        setComposerText,
+      );
+  }, []);
+
   const submit = async (streamingBehavior?: "followUp" | "steer") => {
     if (!canSend) return;
     const sessionAtSend = activeSessionId;

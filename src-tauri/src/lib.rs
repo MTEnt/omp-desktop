@@ -1,7 +1,7 @@
 mod commands;
+mod error;
 mod memory;
 mod omp_config;
-mod error;
 mod pty;
 mod rpc;
 mod session;
@@ -10,6 +10,7 @@ mod settings;
 mod ssh;
 
 use tauri::Manager;
+use tauri_plugin_dialog::{DialogExt, MessageDialogKind};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -24,8 +25,23 @@ pub fn run() {
                         .build(),
                 )?;
             }
-            let state = commands::initialize_app_state()?;
-            app.manage(state);
+            match commands::initialize_app_state() {
+                Ok(state) => {
+                    app.manage(state);
+                }
+                Err(error) => {
+                    let message = format!(
+                        "OMP Desktop could not start.\n\n{error}\n\nCheck the OMP installation and app settings, then reopen the app."
+                    );
+                    eprintln!("{message}");
+                    let app_handle = app.handle().clone();
+                    app.dialog()
+                        .message(message)
+                        .title("OMP Desktop startup error")
+                        .kind(MessageDialogKind::Error)
+                        .show(move |_| app_handle.exit(1));
+                }
+            }
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -54,6 +70,7 @@ pub fn run() {
             commands::abort,
             commands::get_state,
             commands::rpc_command,
+            commands::respond_extension_ui,
             commands::upsert_job,
             commands::post_turn_housekeeping,
             commands::list_jobs,
@@ -66,5 +83,5 @@ pub fn run() {
             commands::rewrite_assistant_message,
         ])
         .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .unwrap_or_else(|error| eprintln!("OMP Desktop runtime error: {error}"));
 }

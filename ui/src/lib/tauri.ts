@@ -1,6 +1,7 @@
 import { invoke as tauriInvoke } from "@tauri-apps/api/core";
 import { listen as tauriListen } from "@tauri-apps/api/event";
 import { open as tauriOpen } from "@tauri-apps/plugin-dialog";
+import { open as tauriShellOpen } from "@tauri-apps/plugin-shell";
 
 import type {
   AppSettings,
@@ -18,6 +19,7 @@ import type {
   RoleMemoryNote,
   RoleScratchpad,
   SessionInfo,
+  ExtensionUiResponse,
 } from "../session/types.ts";
 
 const getInternals = (): { invoke?: unknown } | null => {
@@ -130,6 +132,17 @@ export const api = {
     params: Record<string, unknown> = {},
   ) => invoke<unknown>("rpc_command", { sessionId, command, params }),
 
+  respondExtensionUi: (
+    sessionId: string,
+    requestId: string,
+    response: ExtensionUiResponse,
+  ) =>
+    invoke<void>("respond_extension_ui", {
+      sessionId,
+      requestId,
+      response,
+    }),
+
   rewriteAssistantMessage: (
     sessionId: string,
     text: string,
@@ -216,6 +229,18 @@ export const api = {
       sessionId: job.sessionId ?? null,
     }),
 };
+
+export async function openExternalUrl(rawUrl: string): Promise<void> {
+  const url = new URL(rawUrl);
+  if (url.protocol !== "http:" && url.protocol !== "https:") {
+    throw new Error(`Unsupported external URL protocol: ${url.protocol}`);
+  }
+  if (!isTauriRuntime()) {
+    window.open(url.toString(), "_blank", "noopener,noreferrer");
+    return;
+  }
+  await tauriShellOpen(url.toString());
+}
 
 export async function openDirectoryDialog(): Promise<string | null> {
   if (!isTauriRuntime()) {

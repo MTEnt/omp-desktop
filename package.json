@@ -6,12 +6,18 @@
     "build": "tauri build",
     "ui:dev": "npm --prefix ui run dev",
     "ui:build": "npm --prefix ui run build",
+    "test": "npm --prefix ui test && cargo test --manifest-path src-tauri/Cargo.toml",
+    "lint": "npm --prefix ui run lint && cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --all-features -- -D warnings",
+    "check": "npm test && npm run lint && npm run ui:build",
     "start": "tauri dev",
     "launch:mac": "./Launch OMP Desktop.command",
     "icons": "echo \"Icons live in src-tauri/icons (regenerate via repo script if needed)\"",
     "build:windows": "tauri build --bundles nsis",
     "launch:windows": "powershell -ExecutionPolicy Bypass -File ./scripts/launch-windows.ps1",
     "tauri": "tauri"
+  },
+  "engines": {
+    "node": ">=22.12.0"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.10.1",

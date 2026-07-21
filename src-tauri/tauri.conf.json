@@ -22,7 +22,7 @@
       }
     ],
     "security": {
-      "csp": null
+      "csp": "default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data: blob: asset: http://asset.localhost http: https:; media-src 'self' data: blob:; worker-src 'self' blob:; connect-src ipc: http://ipc.localhost ws://ipc.localhost http://localhost:* https://localhost:* ws://localhost:* http://127.0.0.1:* https://127.0.0.1:* ws://127.0.0.1:*; frame-src http://localhost:* https://localhost:* http://127.0.0.1:* https://127.0.0.1:* http://0.0.0.0:* https://0.0.0.0:* http://[::1]:* https://[::1]:*"
     }
   },
   "bundle": {
@@ -40,7 +40,7 @@
     },
     "windows": {
       "webviewInstallMode": {
-        "type": "downloadBootstrapper"
+        "type": "offlineInstaller"
       },
       "wix": null,
       "nsis": {

@@ -4,22 +4,11 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
 echo "Installing Impeccable skills (global agents + project link)..."
-npx --yes impeccable install <<'ANSWERS' || npx --yes impeccable install --help >/dev/null
-ANSWERS
-
-# Non-interactive fallback: ensure global agents skill exists
-if [[ ! -d "$HOME/.agents/skills/impeccable" ]]; then
-  # force global agents target via copy from npx package if interactive failed
-  PKG="$(npm root -g 2>/dev/null)/impeccable"
-  if [[ ! -d "$PKG" ]]; then
-    npm pack impeccable --silent >/tmp/impeccable.tgz
-    mkdir -p /tmp/impeccable-extract
-    tar -xzf /tmp/impeccable.tgz -C /tmp/impeccable-extract
-    # tarball has package/
-    SRC=$(find /tmp/impeccable-extract -type d -name impeccable | head -1)
-  fi
-  echo "Run: npx impeccable install  (choose global + agents/claude)"
-fi
+npx --yes impeccable@3.2.1 install \
+  --yes \
+  --scope=global \
+  --providers=agents,claude \
+  --no-hooks
 
 mkdir -p "$ROOT/.agents/skills" "$HOME/.omp/agent/skills"
 if [[ -d "$HOME/.agents/skills/impeccable" ]]; then

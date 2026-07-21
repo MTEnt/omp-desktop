@@ -231,7 +231,9 @@ pub fn parse_available_models_response(response: &Value) -> Vec<AvailableModel> 
 
     let mut models = Vec::new();
     for item in list {
-        let Some(obj) = item.as_object() else { continue };
+        let Some(obj) = item.as_object() else {
+            continue;
+        };
         let provider = obj
             .get("provider")
             .and_then(Value::as_str)

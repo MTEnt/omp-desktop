@@ -1,11 +1,14 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { api } from "../lib/tauri.ts";
-import { selectActiveSession, useSessionStore } from "../session/session-store.ts";
+import {
+  projectKeyForSession,
+  selectActiveSession,
+  useSessionStore,
+} from "../session/session-store.ts";
 import type { RoleMemoryNote } from "../session/types.ts";
 import { EmptyState } from "./empty-state.tsx";
 
-const projectKeyFromCwd = (cwd: string) => cwd.replaceAll("\\", "/");
 
 export const MemoryPanel = () => {
   const session = useSessionStore(selectActiveSession);
@@ -15,6 +18,7 @@ export const MemoryPanel = () => {
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
   const [busy, setBusy] = useState(false);
+  const requestGeneration = useRef(0);
 
   const roles = useMemo(() => {
     const set = new Set(modelRoles.map((item) => item.role));
@@ -25,13 +29,23 @@ export const MemoryPanel = () => {
     return [...set];
   }, [modelRoles]);
 
-  const projectKey = session ? projectKeyFromCwd(session.cwd) : null;
+  const projectKey = session ? projectKeyForSession(session) : null;
+  const queryKey = `${role}\u0000${projectKey ?? ""}`;
+  const activeQueryKey = useRef(queryKey);
+  activeQueryKey.current = queryKey;
 
-  const reload = async () => {
+  const reload = useCallback(async () => {
     if (!projectKey) return;
+    const request = ++requestGeneration.current;
+    const requestedQuery = queryKey;
     const next = await api.listRoleNotes(role, projectKey);
-    setNotes(next);
-  };
+    if (
+      request === requestGeneration.current &&
+      requestedQuery === activeQueryKey.current
+    ) {
+      setNotes(next);
+    }
+  }, [projectKey, queryKey, role]);
 
   useEffect(() => {
     if (!projectKey) {
@@ -39,7 +53,10 @@ export const MemoryPanel = () => {
       return;
     }
     void reload().catch(console.warn);
-  }, [projectKey, role]);
+    return () => {
+      requestGeneration.current += 1;
+    };
+  }, [projectKey, reload]);
 
   if (!session || !projectKey) {
     return <EmptyState>Open a session to view per-role memory.</EmptyState>;

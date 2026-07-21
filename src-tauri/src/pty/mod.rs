@@ -114,6 +114,7 @@ impl PtyManager {
             })
         {
             let _ = child.kill();
+            let _ = child.wait();
             return Err(pty_error("start PTY reader", error));
         }
 
@@ -180,6 +181,7 @@ impl PtyManager {
             })
         {
             let _ = child.kill();
+            let _ = child.wait();
             return Err(pty_error("start PTY reader", error));
         }
 
@@ -217,6 +219,7 @@ impl PtyManager {
     pub fn close_pty(&mut self, session_id: &str) -> AppResult<()> {
         if let Some(mut process) = self.processes.remove(session_id) {
             let _ = process.child.kill();
+            let _ = process.child.wait();
         }
         Ok(())
     }
@@ -232,6 +235,7 @@ impl Drop for PtyManager {
     fn drop(&mut self) {
         for (_, mut process) in self.processes.drain() {
             let _ = process.child.kill();
+            let _ = process.child.wait();
         }
     }
 }
@@ -239,7 +243,6 @@ impl Drop for PtyManager {
 fn pty_error(action: &str, error: impl std::fmt::Display) -> AppError {
     AppError::Msg(format!("unable to {action}: {error}"))
 }
-
 
 fn remote_ssh_pty_args(target: &RemoteTarget) -> Vec<String> {
     let mut args = vec![
@@ -261,10 +264,15 @@ fn remote_ssh_pty_args(target: &RemoteTarget) -> Vec<String> {
             args.push(key.clone());
         }
     }
+    args.push("--".into());
     args.push(ssh_destination(target));
 
     let remote_cwd = target.remote_cwd.trim();
-    let remote_cwd = if remote_cwd.is_empty() { "~" } else { remote_cwd };
+    let remote_cwd = if remote_cwd.is_empty() {
+        "~"
+    } else {
+        remote_cwd
+    };
     let quoted = shell_single_quote(remote_cwd);
     // Login shell in the remote project directory.
     let script = format!(

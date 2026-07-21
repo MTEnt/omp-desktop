@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { api, openDirectoryDialog } from "../lib/tauri.ts";
+import { api, openDirectoryDialog, openExternalUrl } from "../lib/tauri.ts";
 import type {
   ActivityItem,
   AppSettings,
@@ -8,6 +8,8 @@ import type {
   RemoteTarget,
   SkillInfo,
   LaunchRecipe,
+  ExtensionUiRequest,
+  ExtensionUiResponse,
   CompanionTarget,
   BrowserArtifact,
   SessionInfo,
@@ -38,6 +40,7 @@ export interface SessionStore {
   states: Record<string, unknown>;
   error: string | null;
   streaming: Record<string, boolean>;
+  extensionUiRequests: Record<string, ExtensionUiRequest[]>;
   bootstrap: () => Promise<void>;
   setActive: (sessionId: string | null) => void;
   openFolder: (cwd?: string, resume?: string) => Promise<void>;
@@ -60,11 +63,16 @@ export interface SessionStore {
   send: (message: string, streamingBehavior?: string) => Promise<boolean>;
   abort: () => Promise<void>;
   applyOmpEvent: (sessionId: string, event: unknown) => void;
+  respondExtensionUi: (
+    sessionId: string,
+    requestId: string,
+    response: ExtensionUiResponse,
+  ) => Promise<boolean>;
   updateAssistantText: (sessionId: string, itemId: string, text: string) => Promise<boolean>;
   markExited: (sessionId: string) => void;
   clearError: () => void;
   roleMemoryCache: Record<string, { preamble: string; loadedAt: number }>;
-  ensureRoleMemoryPreamble: (role: string, cwd: string, sessionId: string) => Promise<string>;
+  ensureRoleMemoryPreamble: (role: string, sessionId: string) => Promise<string>;
 }
 
 const EMPTY_TRANSCRIPT: TranscriptItem[] = [];
@@ -181,6 +189,60 @@ const readString = (
     if (typeof candidate === "string") return candidate;
   }
   return undefined;
+};
+
+const EXTENSION_UI_METHODS: ExtensionUiRequest["method"][] = [
+  "select",
+  "confirm",
+  "input",
+  "editor",
+  "cancel",
+  "notify",
+  "setStatus",
+  "setWidget",
+  "setTitle",
+  "set_editor_text",
+  "open_url",
+];
+
+const parseExtensionUiRequest = (
+  event: Record<string, unknown>,
+): ExtensionUiRequest | null => {
+  const id = readString(event, "id");
+  const method = readString(event, "method");
+  if (
+    !id ||
+    !method ||
+    !EXTENSION_UI_METHODS.some((candidate) => candidate === method)
+  ) {
+    return null;
+  }
+  const options = Array.isArray(event.options)
+    ? event.options.filter((option): option is string => typeof option === "string")
+    : undefined;
+  return {
+    id,
+    method: method as ExtensionUiRequest["method"],
+    title: readString(event, "title"),
+    message: readString(event, "message"),
+    placeholder: readString(event, "placeholder"),
+    prefill: readString(event, "prefill"),
+    options,
+    timeout:
+      typeof event.timeout === "number" && Number.isFinite(event.timeout)
+        ? event.timeout
+        : undefined,
+    targetId: readString(event, "targetId"),
+    url: readString(event, "url"),
+    launchUrl: readString(event, "launchUrl"),
+    instructions: readString(event, "instructions"),
+    notifyType: readString(event, "notifyType") as
+      | ExtensionUiRequest["notifyType"]
+      | undefined,
+    statusKey: readString(event, "statusKey"),
+    statusText: readString(event, "statusText"),
+    text: readString(event, "text"),
+  };
 };
 
 const normalizeTodoPhases = (snapshot: unknown): TodoPhase[] => {
@@ -322,11 +384,51 @@ const toolIdentity = (
 };
 
 
-const projectKeyFromCwd = (cwd: string) => cwd.replaceAll("\\", "/");
+const normalizeProjectPath = (path: string): string => path.replaceAll("\\", "/");
+
+export const projectKeyForSession = (session: SessionInfo): string => {
+  if (!session.remote) return normalizeProjectPath(session.cwd);
+  const remoteRoot = session.remote.remoteCwd.trim() || "~";
+  const suffix = remoteRoot.startsWith("/") ? remoteRoot : `/${remoteRoot}`;
+  return `ssh://${session.remote.hostName}${suffix}`;
+};
+
+export const projectLabelForSession = (session: SessionInfo): string => {
+  if (!session.remote) {
+    return normalizeProjectPath(session.cwd).split("/").filter(Boolean).at(-1) || session.title;
+  }
+  const remoteRoot = session.remote.remoteCwd.replace(/\/+$/g, "");
+  const folder = remoteRoot.split("/").filter(Boolean).at(-1) || "~";
+  return `${session.remote.hostName}:${folder}`;
+};
 
 
 const LOCALHOST_URL_RE =
   /https?:\/\/(?:localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\])(?::\d+)?(?:\/[^\s"'<>]*)?/gi;
+
+const LOCAL_COMPANION_HOSTS = new Set([
+  "localhost",
+  "127.0.0.1",
+  "0.0.0.0",
+  "[::1]",
+]);
+
+export const normalizeLocalCompanionUrl = (raw: string): string | null => {
+  try {
+    const parsed = new URL(raw.trim());
+    if (
+      (parsed.protocol !== "http:" && parsed.protocol !== "https:") ||
+      !LOCAL_COMPANION_HOSTS.has(parsed.hostname) ||
+      parsed.username ||
+      parsed.password
+    ) {
+      return null;
+    }
+    return parsed.href;
+  } catch {
+    return null;
+  }
+};
 
 const DATA_IMAGE_RE = /data:image\/[a-zA-Z0-9.+-]+;base64,[A-Za-z0-9+/=\s]+/g;
 
@@ -461,7 +563,8 @@ const extractCompanionsFromText = (
   const seen = new Set<string>();
   const out: CompanionTarget[] = [];
   for (const url of matches) {
-    const clean = url.replace(/[),.;]+$/g, "");
+    const clean = normalizeLocalCompanionUrl(url.replace(/[),.;]+$/g, ""));
+    if (!clean) continue;
     if (seen.has(clean)) continue;
     seen.add(clean);
     let title = "Local companion";
@@ -585,6 +688,7 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
   states: {},
   error: null,
   streaming: {},
+  extensionUiRequests: {},
   browserArtifacts: {},
   companions: {},
   activeCompanionId: null,
@@ -697,7 +801,7 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
         companions: { ...state.companions, [session.id]: [] },
         error: null,
       }));
-      void get().ensureRoleMemoryPreamble("default", session.cwd, session.id);
+      void get().ensureRoleMemoryPreamble("default", session.id);
     } catch (error) {
       set({ error: formatOpenSessionError(error) });
     }
@@ -753,7 +857,7 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
         companions: { ...state.companions, [session.id]: [] },
         error: null,
       }));
-      void get().ensureRoleMemoryPreamble("default", session.cwd, session.id);
+      void get().ensureRoleMemoryPreamble("default", session.id);
     } catch (error) {
       set({
         error:
@@ -778,7 +882,7 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
           host: session.remote.host,
           user: session.remote.user ?? null,
           port: session.remote.port ?? null,
-          keyPath: null,
+          keyPath: session.remote.keyPath ?? null,
           remoteCwd: session.remote.remoteCwd,
         }
       : null;
@@ -825,6 +929,10 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
         streaming: withoutSession(state.streaming, sessionId),
         browserArtifacts: withoutSession(state.browserArtifacts, sessionId),
         companions: withoutSession(state.companions, sessionId),
+        extensionUiRequests: withoutSession(
+          state.extensionUiRequests,
+          sessionId,
+        ),
         error: null,
       };
     });
@@ -898,13 +1006,13 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
       const session = get().sessions.find((item) => item.id === sessionId);
       let preamble = "";
       if (session) {
-        const cacheKey = `default::${projectKeyFromCwd(session.cwd)}`;
+        const cacheKey = `default::${projectKeyForSession(session)}`;
         const cached = get().roleMemoryCache[cacheKey];
         if (cached && Date.now() - cached.loadedAt < 30_000) {
           preamble = cached.preamble;
         } else {
           // Don't stall first token on memory IPC; warm cache in background.
-          void get().ensureRoleMemoryPreamble("default", session.cwd, sessionId);
+          void get().ensureRoleMemoryPreamble("default", sessionId);
         }
       }
       await api.prompt(sessionId, `${preamble}${text}`, streamingBehavior);
@@ -956,10 +1064,125 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
     }
   },
 
+  respondExtensionUi: async (sessionId, requestId, response) => {
+    const request = (get().extensionUiRequests[sessionId] ?? []).find(
+      (candidate) => candidate.id === requestId,
+    );
+    if (!request) return false;
+
+    set((state) => ({
+      extensionUiRequests: {
+        ...state.extensionUiRequests,
+        [sessionId]: (state.extensionUiRequests[sessionId] ?? []).filter(
+          (candidate) => candidate.id !== requestId,
+        ),
+      },
+    }));
+    try {
+      await api.respondExtensionUi(sessionId, requestId, response);
+      return true;
+    } catch (error) {
+      set((state) => {
+        if (!state.sessions.some((session) => session.id === sessionId)) {
+          return { error: errorMessage(error) };
+        }
+        const queued = state.extensionUiRequests[sessionId] ?? [];
+        return {
+          extensionUiRequests: {
+            ...state.extensionUiRequests,
+            [sessionId]: queued.some(
+              (candidate) => candidate.id === request.id,
+            )
+              ? queued
+              : [request, ...queued],
+          },
+          error: `Unable to answer OMP dialog: ${errorMessage(error)}`,
+        };
+      });
+      return false;
+    }
+  },
+
   applyOmpEvent: (sessionId, event) => {
     if (!get().sessions.some((session) => session.id === sessionId)) return;
     if (!isRecord(event)) return;
     const type = readString(event, "type");
+
+    if (type === "extension_ui_request") {
+      const request = parseExtensionUiRequest(event);
+      if (!request) return;
+
+      if (request.method === "cancel") {
+        if (!request.targetId) return;
+        set((state) => ({
+          extensionUiRequests: {
+            ...state.extensionUiRequests,
+            [sessionId]: (
+              state.extensionUiRequests[sessionId] ?? []
+            ).filter((candidate) => candidate.id !== request.targetId),
+          },
+        }));
+        return;
+      }
+
+      if (request.method === "open_url") {
+        const url = request.launchUrl ?? request.url;
+        if (url) {
+          void openExternalUrl(url).catch((error) =>
+            set({ error: `Unable to open sign-in URL: ${errorMessage(error)}` }),
+          );
+        }
+        return;
+      }
+
+      if (request.method === "notify") {
+        set((state) => ({
+          activity: {
+            ...state.activity,
+            [sessionId]: appendActivity(
+              state.activity[sessionId] ?? [],
+              request.message ?? "OMP notification",
+              event,
+            ),
+          },
+        }));
+        return;
+      }
+
+      if (request.method === "set_editor_text") {
+        if (request.text !== undefined) {
+          window.dispatchEvent(
+            new CustomEvent("omp-desktop:set-composer-text", {
+              detail: { sessionId, text: request.text },
+            }),
+          );
+        }
+        return;
+      }
+
+      if (
+        request.method !== "select" &&
+        request.method !== "confirm" &&
+        request.method !== "input" &&
+        request.method !== "editor"
+      ) {
+        return;
+      }
+
+      set((state) => {
+        const queued = state.extensionUiRequests[sessionId] ?? [];
+        if (queued.some((candidate) => candidate.id === request.id)) {
+          return state;
+        }
+        return {
+          extensionUiRequests: {
+            ...state.extensionUiRequests,
+            [sessionId]: [...queued, request],
+          },
+        };
+      });
+      return;
+    }
 
     if (type === "agent_start" || type === "agent_end") {
       set((state) => ({
@@ -973,9 +1196,8 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
         void get().refreshState(sessionId);
         const session = get().sessions.find((item) => item.id === sessionId);
         if (session) {
-          const projectKey = projectKeyFromCwd(session.cwd);
-          const projectLabel =
-            session.cwd.split(/[\\/]/).filter(Boolean).at(-1) || session.title;
+          const projectKey = projectKeyForSession(session);
+          const projectLabel = projectLabelForSession(session);
           const transcript = get().transcripts[sessionId] ?? [];
           const lastUser = [...transcript]
             .reverse()
@@ -1001,7 +1223,7 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
             })
             .catch(() => undefined);
           // Warm role-memory cache while the user reads the reply.
-          void get().ensureRoleMemoryPreamble("default", session.cwd, sessionId);
+          void get().ensureRoleMemoryPreamble("default", sessionId);
         }
       }
       return;
@@ -1030,35 +1252,35 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
         const current = state.transcripts[sessionId] ?? [];
         const last = current.at(-1);
         if (last?.kind === "assistant") {
+          const nextResponseId = responseId ?? last.responseId;
+          const nextThinking = thinking || last.thinking;
+          const nextItem: Extract<TranscriptItem, { kind: "assistant" }> = {
+            id: responseId ?? last.id,
+            kind: "assistant",
+            text: text || last.text,
+          };
+          if (nextThinking) nextItem.thinking = nextThinking;
+          if (nextResponseId !== undefined) {
+            nextItem.responseId = nextResponseId;
+          }
           return {
             transcripts: {
               ...state.transcripts,
-              [sessionId]: [
-                ...current.slice(0, -1),
-                {
-                  ...last,
-                  id: responseId ?? last.id,
-                  responseId: responseId ?? last.responseId,
-                  text: text || last.text,
-                  thinking: thinking || last.thinking,
-                },
-              ],
+              [sessionId]: [...current.slice(0, -1), nextItem],
             },
           };
         }
+        const nextItem: Extract<TranscriptItem, { kind: "assistant" }> = {
+          id: responseId ?? nextItemId(current, "assistant"),
+          kind: "assistant",
+          text,
+        };
+        if (thinking) nextItem.thinking = thinking;
+        if (responseId !== undefined) nextItem.responseId = responseId;
         return {
           transcripts: {
             ...state.transcripts,
-            [sessionId]: [
-              ...current,
-              {
-                id: responseId ?? nextItemId(current, "assistant"),
-                kind: "assistant",
-                text,
-                thinking: thinking || undefined,
-                responseId: responseId,
-              },
-            ],
+            [sessionId]: [...current, nextItem],
           },
         };
       });
@@ -1098,19 +1320,19 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
             messageId === last.responseId);
 
         if (canMerge && last?.kind === "assistant") {
-          const nextItem = isThinking
-            ? {
-                ...last,
-                thinking: `${last.thinking ?? ""}${delta}`,
-                responseId: responseId ?? last.responseId,
-                id: responseId ?? last.id,
-              }
-            : {
-                ...last,
-                text: `${last.text}${delta}`,
-                responseId: responseId ?? last.responseId,
-                id: responseId ?? last.id,
-              };
+          const nextResponseId = responseId ?? last.responseId;
+          const nextThinking = isThinking
+            ? `${last.thinking ?? ""}${delta}`
+            : last.thinking;
+          const nextItem: Extract<TranscriptItem, { kind: "assistant" }> = {
+            id: responseId ?? last.id,
+            kind: "assistant",
+            text: isText ? `${last.text}${delta}` : last.text,
+          };
+          if (nextThinking) nextItem.thinking = nextThinking;
+          if (nextResponseId !== undefined) {
+            nextItem.responseId = nextResponseId;
+          }
           return {
             transcripts: {
               ...state.transcripts,
@@ -1119,19 +1341,17 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
           };
         }
 
+        const nextItem: Extract<TranscriptItem, { kind: "assistant" }> = {
+          id: messageId ?? nextItemId(current, "assistant"),
+          kind: "assistant",
+          text: isText ? delta : "",
+        };
+        if (isThinking && delta) nextItem.thinking = delta;
+        if (responseId !== undefined) nextItem.responseId = responseId;
         return {
           transcripts: {
             ...state.transcripts,
-            [sessionId]: [
-              ...current,
-              {
-                id: messageId ?? nextItemId(current, "assistant"),
-                kind: "assistant",
-                text: isText ? delta : "",
-                thinking: isThinking ? delta : undefined,
-                responseId,
-              },
-            ],
+            [sessionId]: [...current, nextItem],
           },
         };
       });
@@ -1330,8 +1550,10 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
     return get().launchRecipe(recipe, { url });
   },
 
-  ensureRoleMemoryPreamble: async (role, cwd, sessionId) => {
-    const projectKey = projectKeyFromCwd(cwd);
+  ensureRoleMemoryPreamble: async (role, sessionId) => {
+    const session = get().sessions.find((item) => item.id === sessionId);
+    if (!session) return "";
+    const projectKey = projectKeyForSession(session);
     const cacheKey = `${role}::${projectKey}`;
     const cached = get().roleMemoryCache[cacheKey];
     if (cached && Date.now() - cached.loadedAt < 30_000) {
@@ -1427,6 +1649,10 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
         session.id === sessionId ? { ...session, status: "exited" } : session,
       ),
       streaming: { ...state.streaming, [sessionId]: false },
+      extensionUiRequests: withoutSession(
+        state.extensionUiRequests,
+        sessionId,
+      ),
       error:
         state.activeSessionId === sessionId
           ? "Session process exited. Restart to continue in this folder."
