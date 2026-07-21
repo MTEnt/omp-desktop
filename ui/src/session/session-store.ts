@@ -412,9 +412,9 @@ const normalizeSubagent = (
   const progress =
     typeof progressValue === "string" || typeof progressValue === "number"
       ? String(progressValue)
-      : lastIntent ??
-        (currentTool ?? undefined) ??
-        recentOutput ??
+      : lastIntent ||
+        currentTool ||
+        recentOutput ||
         readString(subagent, "task", "currentTask", "description");
   const rawStatus =
     readString(subagent, "status", "state") ??

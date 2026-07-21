@@ -68,14 +68,14 @@ export const readFileAsBase64 = async (
   byteLen: number;
   previewUrl: string;
 }> => {
-  const { promise, resolve, reject } = Promise.withResolvers<string>();
-  const reader = new FileReader();
-  reader.onerror = () => reject(reader.error ?? new Error("Failed to read file"));
-  reader.onload = () => {
-    resolve(typeof reader.result === "string" ? reader.result : "");
-  };
-  reader.readAsDataURL(file);
-  const result = await promise;
+  const result = await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(reader.error ?? new Error("Failed to read file"));
+    reader.onload = () => {
+      resolve(typeof reader.result === "string" ? reader.result : "");
+    };
+    reader.readAsDataURL(file);
+  });
   const dataBase64 = stripDataUrlBase64(result);
   const mimeType =
     file.type || mimeFromDataUrl(result) || "application/octet-stream";

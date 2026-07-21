@@ -1,5 +1,7 @@
+import type { ReactNode } from "react";
+
 interface EmptyStateProps {
-  children: string;
+  children: ReactNode;
 }
 
 export const EmptyState = ({ children }: EmptyStateProps) => (
