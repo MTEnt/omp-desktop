@@ -22,6 +22,7 @@ import type {
   RoleScratchpad,
   SessionInfo,
   ExtensionUiResponse,
+  GitStatus,
 } from "../session/types.ts";
 
 const getInternals = (): { invoke?: unknown } | null => {
@@ -46,6 +47,8 @@ export const api = {
   getSettings: () => invoke<AppSettings>("get_settings"),
 
   getSetupStatus: () => invoke<SetupStatus>("get_setup_status"),
+
+  getGitStatus: (cwd: string) => invoke<GitStatus>("get_git_status", { cwd }),
 
   installImpeccable: () => invoke<SetupStatus>("install_impeccable"),
 

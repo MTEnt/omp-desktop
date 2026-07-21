@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useMemo, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from "react";
 
 import { useLayoutStore, type PanelId } from "./layout-store.ts";
 import {
@@ -39,6 +39,14 @@ import { OnboardingWalkthrough } from "./onboarding-walkthrough.tsx";
 import { SshConnectModal } from "./ssh-connect-modal.tsx";
 import { TaskProgressStrip } from "./task-progress-strip.tsx";
 import { ExtensionUiDialog } from "./extension-ui-dialog.tsx";
+import {
+  formatGitChip,
+  formatGitChipTitle,
+  normalizeGitStatus,
+  shouldPollGitStatus,
+  type GitStatus,
+} from "./git-status.ts";
+import { api, isTauriRuntime } from "../lib/tauri.ts";
 
 const TerminalPanel = lazy(async () => ({
   default: (await import("../panels/terminal-panel.tsx")).TerminalPanel,
@@ -277,6 +285,58 @@ export const Shell = () => {
     if (!id) return null;
     return state.sessions.find((session) => session.id === id)?.remote ?? null;
   });
+  const activeSession = useSessionStore((state) => {
+    const id = state.activeSessionId;
+    if (!id) return null;
+    return state.sessions.find((session) => session.id === id) ?? null;
+  });
+  const activeCwd = activeSession?.cwd ?? null;
+  const [gitStatus, setGitStatus] = useState<GitStatus | null>(null);
+
+  const refreshGitStatus = useCallback(async (cwd: string) => {
+    if (!isTauriRuntime()) return;
+    try {
+      const next = normalizeGitStatus(await api.getGitStatus(cwd));
+      setGitStatus(next);
+    } catch (error) {
+      setGitStatus({
+        branch: null,
+        dirty: false,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!activeCwd || !shouldPollGitStatus({ cwd: activeCwd, remote: activeRemote })) {
+      setGitStatus(null);
+      return;
+    }
+
+    let cancelled = false;
+    const run = () => {
+      if (cancelled) return;
+      void refreshGitStatus(activeCwd);
+    };
+
+    run();
+    const timer = window.setInterval(run, 15_000);
+
+    const onFocus = () => run();
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") onFocus();
+    };
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onVisibility);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, [activeCwd, activeRemote, activeSessionId, refreshGitStatus]);
+
   const runtimeStatus = useMemo(
     () => readSessionRuntimeStatus(runtimeSnapshot),
     [runtimeSnapshot],
@@ -401,6 +461,16 @@ export const Shell = () => {
           {costChip ? (
             <span className="runtime-meta" title={statsTitle}>
               {costChip}
+            </span>
+          ) : null}
+          {activeSessionId && activeCwd ? (
+            <span
+              className={`git-status-chip${gitStatus?.dirty ? " git-status-chip--dirty" : ""}${
+                gitStatus?.branch ? "" : " git-status-chip--empty"
+              }`}
+              title={formatGitChipTitle(gitStatus)}
+            >
+              {formatGitChip(gitStatus)}
             </span>
           ) : null}
           <button

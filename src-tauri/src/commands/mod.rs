@@ -1,4 +1,5 @@
 use crate::error::AppError;
+use crate::git_status::{self, GitStatus};
 use crate::image_attach::{images_to_rpc_value, prepare_from_raw_inputs, PreparedImage, RawImageInput};
 use crate::memory::{self, JobCard, MemoryStore, PersistentAgent, RoleMemoryNote, RoleScratchpad};
 use crate::omp_config::{self, AvailableModel, ModelRolesSnapshot};
@@ -1004,6 +1005,20 @@ pub async fn delete_historic_session(path: String) -> Result<(), AppError> {
 pub async fn rename_historic_session(path: String, title: String) -> Result<(), AppError> {
     let paths = default_session_library_paths()?;
     session_library::rename_session(&paths, &path, &title)
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub async fn get_git_status(cwd: String) -> GitStatus {
+    // Path containment: only operate on the provided session cwd via `git -C`.
+    // Never chdir the process. Failures degrade to GitStatus.error.
+    let path = PathBuf::from(cwd.trim());
+    tokio::task::spawn_blocking(move || git_status::git_status(&path))
+        .await
+        .unwrap_or_else(|error| GitStatus {
+            branch: None,
+            dirty: false,
+            error: Some(format!("git status task failed: {error}")),
+        })
 }
 
 #[cfg(test)]

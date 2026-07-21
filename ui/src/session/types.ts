@@ -23,6 +23,12 @@ export interface SessionInfo {
   remote?: RemoteSessionInfo | null;
 }
 
+export interface GitStatus {
+  branch: string | null;
+  dirty: boolean;
+  error: string | null;
+}
+
 export interface SshHostInfo {
   name: string;
   host: string;
