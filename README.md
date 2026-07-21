@@ -134,6 +134,11 @@ cd src-tauri && cargo test
 - **React UI** (`ui/`): Zen shell, transcript/composer, pinnable panels, palette, xterm terminal view.
 - **OMP** remains source of truth for agent loop, tools, session files, and auth.
 
+Deeper reference:
+
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — process model, RPC/event bridge, PTY/SSH/memory, 1 MiB frame limit, stock-OMP boundary, security notes
+- [docs/FEATURE_MATRIX.md](docs/FEATURE_MATRIX.md) — capability × authority × desktop surface × roadmap status
+
 ## Defaults
 
 - Approval mode: **write** (`--approval-mode write`) by default; OMP may read and edit normally, but asks before running commands.
