@@ -9,7 +9,7 @@ Zen-default UI with expandable panels, multi-tab `omp --mode rpc` sessions, live
 - macOS 12+ (Apple Silicon or Intel)
 - Windows 10/11 x64 (WebView2)
 - Rust toolchain (`rustc` / `cargo`)
-- Node.js 20+ and npm
+- Node.js 22.12+ and npm
 - [Tauri 2 system dependencies](https://v2.tauri.app/start/prerequisites/)
 - `omp` on PATH (v17+), or set the binary path in Settings
 
@@ -72,7 +72,7 @@ npm run launch:windows
 
 ### Windows prerequisites
 
-- [Node.js 20+](https://nodejs.org/)
+- [Node.js 22.12+](https://nodejs.org/)
 - [Rust / rustup](https://rustup.rs/) (`cargo` on PATH)
 - [Microsoft Edge WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/) (usually preinstalled on Win11)
 - `omp` on PATH (v17+), or set the binary path in Settings (`omp.cmd` / `omp.exe` are auto-detected)
@@ -136,7 +136,7 @@ cd src-tauri && cargo test
 
 ## Defaults
 
-- Approval mode: **yolo** (`--approval-mode yolo` + `--auto-approve`) unless changed in Settings.
+- Approval mode: **write** (`--approval-mode write`) by default; OMP may read and edit normally, but asks before running commands.
 - Layout: Zen (icon rails); click to drawer, pin to dock.
 - Terminal: app-owned PTY per session (not the OMP TUI).
 
