@@ -9,15 +9,21 @@ import {
   type KeyboardEvent,
 } from "react";
 
-import { api } from "../lib/tauri.ts";
+import { api, isTauriRuntime, openFilesDialog } from "../lib/tauri.ts";
 import {
   MAX_COMPOSER_IMAGES,
   formatByteLen,
+  isImageFile,
   nextAttachmentId,
   readFileAsBase64,
   takeImageFiles,
   type ComposerAttachment,
 } from "./image-attach.ts";
+import {
+  addPathChip,
+  mergeMessageWithPaths,
+  resolveDroppedFilePath,
+} from "./path-chips.ts";
 import {
   extractSlashState,
   filterSlashCommands,
@@ -44,9 +50,11 @@ export const Composer = () => {
   const [slashOpen, setSlashOpen] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [attachments, setAttachments] = useState<ComposerAttachment[]>([]);
+  const [pathChips, setPathChips] = useState<string[]>([]);
   const [dragOver, setDragOver] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const pathInputRef = useRef<HTMLInputElement>(null);
 
   const commands =
     (activeSessionId && commandsBySession[activeSessionId]) || EMPTY_COMMANDS;
@@ -77,6 +85,7 @@ export const Composer = () => {
       }
       return [];
     });
+    setPathChips([]);
   }, [activeSessionId]);
 
   useEffect(() => {
@@ -124,7 +133,9 @@ export const Composer = () => {
 
   const message = draft.trim();
   const canSend = Boolean(
-    activeSessionId && (message || attachments.length > 0) && !sending,
+    activeSessionId &&
+      (message || attachments.length > 0 || pathChips.length > 0) &&
+      !sending,
   );
 
   const syncCursor = (el: HTMLTextAreaElement | null = textareaRef.current) => {
@@ -243,9 +254,38 @@ export const Composer = () => {
     });
   };
 
+  const addPathChips = (paths: string[]) => {
+    if (!paths.length) return;
+    setPathChips((prev) =>
+      paths.reduce((acc, path) => addPathChip(acc, path), prev),
+    );
+  };
+
+  const removePathChip = (path: string) => {
+    setPathChips((prev) => prev.filter((item) => item !== path));
+  };
+
+  const pickPathChips = async () => {
+    if (!activeSessionId || sending) return;
+    if (isTauriRuntime()) {
+      try {
+        const selected = await openFilesDialog();
+        addPathChips(selected);
+      } catch (error) {
+        const text = error instanceof Error ? error.message : String(error);
+        useSessionStore.setState({
+          error: `Unable to attach path: ${text}`,
+        });
+      }
+      return;
+    }
+    pathInputRef.current?.click();
+  };
+
   const submit = async (streamingBehavior?: "followUp" | "steer") => {
     if (!canSend) return;
     const sessionAtSend = activeSessionId;
+    const fullMessage = mergeMessageWithPaths(message, pathChips);
     const imagePayload = attachments.map((item) => ({
       dataBase64: item.dataBase64,
       mimeType: item.mimeType,
@@ -253,7 +293,7 @@ export const Composer = () => {
     setSending(true);
     try {
       const sent = await send(
-        message,
+        fullMessage,
         streamingBehavior,
         imagePayload.length ? imagePayload : undefined,
       );
@@ -264,6 +304,7 @@ export const Composer = () => {
         setDraft("");
         setCursor(0);
         setSlashOpen(false);
+        setPathChips([]);
         setAttachments((prev) => {
           for (const item of prev) {
             if (item.previewUrl.startsWith("blob:")) {
@@ -363,7 +404,23 @@ export const Composer = () => {
     const files = event.dataTransfer?.files
       ? Array.from(event.dataTransfer.files)
       : [];
-    void addFiles(files);
+    if (!files.length) return;
+
+    const imageFiles = takeImageFiles(files, MAX_COMPOSER_IMAGES);
+    if (imageFiles.length) {
+      void addFiles(imageFiles);
+    }
+
+    // Path chips only when a real filesystem path is known (Tauri drop).
+    const pathCandidates: string[] = [];
+    for (const file of files) {
+      if (isImageFile(file)) continue;
+      const path = resolveDroppedFilePath(
+        file as File & { path?: string },
+      );
+      if (path) pathCandidates.push(path);
+    }
+    addPathChips(pathCandidates);
   };
 
   const handleAbort = async () => {
@@ -395,6 +452,30 @@ export const Composer = () => {
       onDrop={handleDrop}
     >
       <label htmlFor="message">Message OMP</label>
+      {pathChips.length > 0 && (
+        <ul className="composer__path-chips" aria-label="File path references">
+          {pathChips.map((path) => {
+            const label = path.split(/[/\\]/).filter(Boolean).pop() ?? path;
+            return (
+              <li key={path} className="composer__path-chip" title={path}>
+                <span className="composer__path-chip-icon" aria-hidden="true">
+                  /
+                </span>
+                <span className="composer__path-chip-label">@{label}</span>
+                <button
+                  type="button"
+                  className="composer__path-chip-remove"
+                  aria-label={`Remove path ${path}`}
+                  onClick={() => removePathChip(path)}
+                  disabled={sending}
+                >
+                  ×
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      )}
       {attachments.length > 0 && (
         <ul className="composer__attachments" aria-label="Image attachments">
           {attachments.map((item) => (
@@ -475,7 +556,7 @@ export const Composer = () => {
             activeSessionId
               ? isStreaming
                 ? "Add a follow-up or steer the current run…"
-                : "Ask OMP to work in this project…  (/ for commands, paste/drop images)"
+                : "Ask OMP to work in this project…  (/ for commands, @paths, paste/drop images)"
               : "Open a folder to begin…"
           }
           disabled={!activeSessionId || sending}
@@ -509,6 +590,28 @@ export const Composer = () => {
               void addFiles(files);
             }}
           />
+          <input
+            ref={pathInputRef}
+            type="file"
+            multiple
+            hidden
+            onChange={(event) => {
+              const files = event.target.files
+                ? Array.from(event.target.files)
+                : [];
+              event.target.value = "";
+              // Browser/dev: only the basename is available — still useful as a token.
+              addPathChips(
+                files
+                  .map((file) =>
+                    resolveDroppedFilePath(file as File & { path?: string }, {
+                      allowNameFallback: true,
+                    }),
+                  )
+                  .filter((path): path is string => Boolean(path)),
+              );
+            }}
+          />
           <button
             type="button"
             className="composer__attach"
@@ -523,12 +626,22 @@ export const Composer = () => {
           >
             📎
           </button>
+          <button
+            type="button"
+            className="composer__attach composer__attach--path"
+            disabled={!activeSessionId || sending}
+            title="Attach file path"
+            aria-label="Attach file path"
+            onClick={() => void pickPathChips()}
+          >
+            Path
+          </button>
           <span>
             {isStreaming
               ? "Enter follow-up · ⌘/Ctrl Enter steer · ⇧Enter newline"
               : slashActive
                 ? "↑↓ navigate · Tab/Enter insert · Esc close"
-                : "Enter send · ⇧Enter newline · paste/drop images"}
+                : "Enter send · ⇧Enter newline · paths/images"}
           </span>
         </div>
         <div className="composer__actions">

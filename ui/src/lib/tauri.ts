@@ -375,6 +375,22 @@ export async function openDirectoryDialog(): Promise<string | null> {
   return Array.isArray(selected) ? (selected[0] ?? null) : selected;
 }
 
+/** Multi-select local file paths (Tauri only). Returns [] when cancelled. */
+export async function openFilesDialog(options?: {
+  title?: string;
+}): Promise<string[]> {
+  if (!isTauriRuntime()) {
+    return [];
+  }
+  const selected = await tauriOpen({
+    multiple: true,
+    directory: false,
+    title: options?.title ?? "Attach file paths",
+  });
+  if (!selected) return [];
+  return Array.isArray(selected) ? selected.filter(Boolean) : [selected];
+}
+
 export async function listenTauriEvent<T>(
   event: string,
   handler: (payload: T) => void,

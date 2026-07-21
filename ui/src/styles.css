@@ -1493,6 +1493,79 @@ button:disabled {
   background: rgba(255, 255, 255, 0.06);
 }
 
+.composer__path-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0 0 8px;
+  padding: 0;
+  list-style: none;
+}
+
+.composer__path-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  min-height: 26px;
+  padding: 3px 6px 3px 8px;
+  border: 1px solid rgba(212, 168, 67, 0.35);
+  border-radius: 999px;
+  background: rgba(212, 168, 67, 0.08);
+  color: #e6d3a1;
+  font-family: "SFMono-Regular", Menlo, monospace;
+  font-size: 11px;
+  line-height: 1.2;
+}
+
+.composer__path-chip-icon {
+  flex: 0 0 auto;
+  color: var(--gold, #d4a843);
+  font-size: 10px;
+  opacity: 0.85;
+}
+
+.composer__path-chip-label {
+  overflow: hidden;
+  min-width: 0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.composer__path-chip-remove {
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  color: #c9b27a;
+  background: transparent;
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.composer__path-chip-remove:hover:not(:disabled) {
+  color: #fff4d4;
+  background: rgba(212, 168, 67, 0.18);
+}
+
+.composer__attach--path {
+  width: auto;
+  min-width: 44px;
+  padding: 0 8px;
+  color: #c9b27a;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.composer__attach--path:hover:not(:disabled) {
+  color: #f0dfb0;
+  border-color: rgba(212, 168, 67, 0.4);
+}
+
 .composer__footer-left {
   display: flex;
   align-items: center;
