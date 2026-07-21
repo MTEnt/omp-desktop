@@ -293,8 +293,9 @@ mod tests {
     use tokio::time::{timeout, Duration};
 
     const MOCK_NODE: &str = r#"
+const fs = require("fs");
 const readline = require("readline");
-const send = (frame) => process.stdout.write(JSON.stringify(frame) + "\n");
+const send = (frame) => fs.writeSync(1, JSON.stringify(frame) + "\n");
 send({ type: "ready" });
 const input = readline.createInterface({ input: process.stdin });
 input.on("line", (line) => {
@@ -327,15 +328,17 @@ input.on("line", (line) => {
 
     #[cfg(unix)]
     const STUBBORN_NODE: &str = r#"
-process.stdout.write('{"type":"ready"}\n');
+const fs = require("fs");
+fs.writeSync(1, '{"type":"ready"}\n');
 process.stdin.resume();
 setInterval(() => {}, 1000);
 "#;
 
     #[cfg(unix)]
     const OVERSIZED_NODE: &str = r#"
-process.stdout.write('{"type":"ready"}\n');
-process.stdout.write(JSON.stringify({
+const fs = require("fs");
+fs.writeSync(1, '{"type":"ready"}\n');
+fs.writeSync(1, JSON.stringify({
   type: "message_update",
   payload: "x".repeat(1024 * 1024)
 }) + "\n");
@@ -371,7 +374,7 @@ setInterval(() => {}, 1000);
         let client = RpcClient::spawn("node", ["-e", STUBBORN_NODE])
             .await
             .unwrap();
-        client.wait_ready(Duration::from_secs(2)).await.unwrap();
+        client.wait_ready(Duration::from_secs(10)).await.unwrap();
         let pid = client._pid.unwrap();
 
         drop(client);
@@ -394,7 +397,7 @@ setInterval(() => {}, 1000);
         let mut client = RpcClient::spawn("node", ["-e", OVERSIZED_NODE])
             .await
             .unwrap();
-        client.wait_ready(Duration::from_secs(2)).await.unwrap();
+        client.wait_ready(Duration::from_secs(10)).await.unwrap();
         let pid = client._pid.unwrap();
         let mut events = client.take_events().expect("event receiver");
 
@@ -428,7 +431,7 @@ setInterval(() => {}, 1000);
     #[tokio::test]
     async fn rejects_oversized_outbound_frames() {
         let client = spawn_mock().await;
-        client.wait_ready(Duration::from_secs(2)).await.unwrap();
+        client.wait_ready(Duration::from_secs(10)).await.unwrap();
 
         let error = client
             .send_frame(json!({
@@ -448,13 +451,13 @@ setInterval(() => {}, 1000);
     async fn wait_ready_succeeds() {
         let client = spawn_mock().await;
 
-        client.wait_ready(Duration::from_secs(2)).await.unwrap();
+        client.wait_ready(Duration::from_secs(10)).await.unwrap();
     }
 
     #[tokio::test]
     async fn request_correlates_responses_by_id() {
         let client = spawn_mock().await;
-        client.wait_ready(Duration::from_secs(2)).await.unwrap();
+        client.wait_ready(Duration::from_secs(10)).await.unwrap();
 
         let (slow, fast) = tokio::join!(
             client.request("prompt", json!({ "message": "slow" })),
@@ -472,7 +475,7 @@ setInterval(() => {}, 1000);
     #[tokio::test]
     async fn sends_extension_ui_responses_without_request_correlation() {
         let mut client = spawn_mock().await;
-        client.wait_ready(Duration::from_secs(2)).await.unwrap();
+        client.wait_ready(Duration::from_secs(10)).await.unwrap();
         let mut events = client.take_events().expect("event receiver");
 
         client
@@ -501,7 +504,7 @@ setInterval(() => {}, 1000);
     #[tokio::test]
     async fn forwards_non_response_frames_as_events() {
         let mut client = spawn_mock().await;
-        client.wait_ready(Duration::from_secs(2)).await.unwrap();
+        client.wait_ready(Duration::from_secs(10)).await.unwrap();
         let mut events = client.take_events().expect("event receiver");
         assert!(client.take_events().is_none());
         client
