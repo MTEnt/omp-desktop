@@ -4,6 +4,7 @@ import { useTaskProgress } from "./use-task-progress.ts";
 
 export const TaskProgressStrip = () => {
   const progress = useTaskProgress();
+  const [expanded, setExpanded] = useState(false);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
@@ -20,6 +21,7 @@ export const TaskProgressStrip = () => {
   const percent = Math.round(progress.display * 100);
   const className = [
     "task-progress",
+    expanded ? "task-progress--expanded" : "task-progress--collapsed",
     progress.crawling ? "task-progress--crawling" : "",
     progress.allDone ? "task-progress--done" : "",
     progress.empty ? "task-progress--empty" : "",
@@ -28,6 +30,7 @@ export const TaskProgressStrip = () => {
     .join(" ");
 
   const beginEdit = () => {
+    setExpanded(true);
     setDraft(progress.goalIsPlaceholder ? "" : progress.goal);
     setEditing(true);
   };
@@ -42,22 +45,75 @@ export const TaskProgressStrip = () => {
     setDraft("");
   };
 
+  if (!expanded) {
+    return (
+      <button
+        type="button"
+        className={className}
+        aria-labelledby={labelId}
+        aria-expanded={false}
+        title="Expand goal"
+        onClick={() => setExpanded(true)}
+      >
+        <span className="task-progress__eyebrow" id={labelId}>
+          Goal
+          {!progress.empty ? (
+            <span className="task-progress__count">
+              {progress.doneCount}/{progress.totalCount}
+            </span>
+          ) : null}
+        </span>
+        <span
+          className={`task-progress__goal${progress.goalIsPlaceholder ? " task-progress__goal--placeholder" : ""}`}
+        >
+          {progress.goal}
+        </span>
+        <span className="task-progress__percent" aria-hidden={progress.empty}>
+          {progress.empty ? "—" : `${percent}%`}
+        </span>
+        <span
+          className="task-progress__mini-track"
+          aria-hidden="true"
+        >
+          <span
+            className="task-progress__fill"
+            style={{ width: `${progress.empty ? 0 : percent}%` }}
+          />
+        </span>
+      </button>
+    );
+  }
+
   return (
     <section
       className={className}
       aria-labelledby={labelId}
       aria-live="polite"
+      aria-expanded={true}
     >
       <div className="task-progress__row">
         <div className="task-progress__meta">
-          <span className="task-progress__eyebrow" id={labelId}>
+          <button
+            type="button"
+            className="task-progress__eyebrow task-progress__toggle"
+            id={labelId}
+            title="Collapse goal"
+            aria-label="Collapse goal"
+            onClick={() => {
+              setEditing(false);
+              setExpanded(false);
+            }}
+          >
             Goal
             {!progress.empty ? (
               <span className="task-progress__count">
                 {progress.doneCount}/{progress.totalCount}
               </span>
             ) : null}
-          </span>
+            <span className="task-progress__chevron" aria-hidden>
+              ▾
+            </span>
+          </button>
 
           {editing ? (
             <input

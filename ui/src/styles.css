@@ -4156,3 +4156,76 @@ button:disabled {
 .role-chip.is-unset .role-chip__model {
   color: #4f5864;
 }
+
+.task-progress--collapsed {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-rows: auto 3px;
+  align-items: center;
+  column-gap: 10px;
+  row-gap: 6px;
+  padding: 7px 11px 8px;
+  border-radius: 10px;
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+}
+
+.task-progress--collapsed:focus-visible {
+  border-color: color-mix(in srgb, #2a3545 70%, #3d7eff 30%);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, #1a2740 55%, transparent), color-mix(in srgb, #10161f 92%, #152033)),
+    #10161f;
+}
+
+.task-progress--collapsed .task-progress__eyebrow {
+  grid-column: 1;
+  grid-row: 1;
+}
+
+.task-progress--collapsed .task-progress__goal {
+  grid-column: 2;
+  grid-row: 1;
+  cursor: inherit;
+  font-size: 12px;
+}
+
+.task-progress--collapsed .task-progress__percent {
+  grid-column: 3;
+  grid-row: 1;
+  min-width: 2rem;
+  font-size: 11px;
+}
+
+.task-progress--collapsed .task-progress__mini-track {
+  grid-column: 1 / -1;
+  grid-row: 2;
+  height: 3px;
+  border-radius: 999px;
+  background: #1c2430;
+  overflow: hidden;
+}
+
+.task-progress__toggle {
+  all: unset;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #8b9bb4;
+}
+
+.task-progress__toggle:focus-visible {
+  color: #c5d8f5;
+}
+
+.task-progress__chevron {
+  margin-left: 2px;
+  font-size: 9px;
+  opacity: 0.75;
+}
