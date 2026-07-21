@@ -32,6 +32,7 @@ import { ScratchpadPanel } from "../panels/scratchpad-panel.tsx";
 import { BrowserPanel } from "../panels/browser-panel.tsx";
 import { CompanionPanel } from "../panels/companion-panel.tsx";
 import { LaunchPanel } from "../panels/launch-panel.tsx";
+import { CatalogPanel } from "../panels/catalog-panel.tsx";
 import { CommandPalette } from "./palette.tsx";
 import { PixelPieLogo } from "./pixel-pie-logo.tsx";
 import { RoleModelStrip } from "./role-model-picker.tsx";
@@ -66,11 +67,12 @@ const panelMeta: Record<PanelId, { label: string; eyebrow: string }> = {
   memory: { label: "Role memory", eyebrow: "Long-term" },
   scratchpad: { label: "Scratchpad", eyebrow: "Working notes" },
   launch: { label: "Launch", eyebrow: "Recipes & skills" },
+  catalog: { label: "Catalog", eyebrow: "MCP · agents · commands" },
   browser: { label: "Browser", eyebrow: "Headless / headed" },
   companion: { label: "Companion", eyebrow: "Local servers" },
 };
 
-const rightPanels: PanelId[] = ["plan", "activity", "attention", "review", "subagents", "jobs", "memory", "scratchpad", "launch", "browser", "companion"];
+const rightPanels: PanelId[] = ["plan", "activity", "attention", "review", "subagents", "jobs", "memory", "scratchpad", "launch", "catalog", "browser", "companion"];
 
 
 const SessionSidebar = () => {
@@ -216,6 +218,8 @@ const PanelBody = ({ panel }: { panel: PanelId }) => {
       );
     case "launch":
       return <LaunchPanel />;
+    case "catalog":
+      return <CatalogPanel />;
     case "browser":
       return <BrowserPanel />;
     case "companion":

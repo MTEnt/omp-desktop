@@ -35,6 +35,20 @@ export interface DirEntryDto {
   isDir: boolean;
 }
 
+export interface CatalogItem {
+  id: string;
+  name: string;
+  source: string;
+  detail?: string | null;
+}
+
+export interface CatalogSnapshot {
+  mcpServers: CatalogItem[];
+  agents: CatalogItem[];
+  skills: CatalogItem[];
+  notes: string[];
+}
+
 export interface SshHostInfo {
   name: string;
   host: string;

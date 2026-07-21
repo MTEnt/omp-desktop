@@ -1,4 +1,5 @@
 mod commands;
+mod catalog;
 mod error;
 mod memory;
 mod git_status;
@@ -96,6 +97,7 @@ pub fn run() {
             commands::get_git_status,
             commands::list_project_dir,
             commands::read_project_file,
+            commands::get_catalog,
         ])
         .run(tauri::generate_context!())
         .unwrap_or_else(|error| eprintln!("OMP Desktop runtime error: {error}"));

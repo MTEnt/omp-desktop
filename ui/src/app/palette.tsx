@@ -38,6 +38,8 @@ const panelActions: Array<{ id: PanelId; label: string }> = [
   { id: "jobs", label: "Job board" },
   { id: "memory", label: "Role memory" },
   { id: "scratchpad", label: "Scratchpad" },
+  { id: "launch", label: "Launch" },
+  { id: "catalog", label: "Catalog" },
   { id: "settings", label: "Settings" },
   { id: "terminal", label: "Terminal" },
 ];
@@ -224,6 +226,14 @@ export const CommandPalette = ({ open, onOpenChange }: CommandPaletteProps) => {
         detail: "Recipes, skills, browser and companion entry points",
         keywords: "skills workflows recipes",
         run: () => openDrawer("launch"),
+      },
+      {
+        id: "open-catalog-panel",
+        group: "Launch",
+        label: "Open Catalog panel",
+        detail: "Browse MCP servers, agents, skills, and slash commands",
+        keywords: "mcp agents skills commands catalog inventory",
+        run: () => openDrawer("catalog"),
       },
       {
         id: "open-settings",

@@ -1,4 +1,5 @@
 use crate::error::AppError;
+use crate::catalog::{self, CatalogSnapshot};
 use crate::git_status::{self, GitStatus};
 use crate::project_fs::{self, DirEntryDto, DEFAULT_MAX_BYTES};
 use crate::image_attach::{images_to_rpc_value, prepare_from_raw_inputs, PreparedImage, RawImageInput};
@@ -1046,6 +1047,26 @@ pub async fn read_project_file(
     tokio::task::spawn_blocking(move || project_fs::read_project_file(&root, &file, limit))
         .await
         .map_err(|e| AppError::Msg(format!("read_project_file join error: {e}")))?
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub async fn get_catalog(cwd: Option<String>) -> CatalogSnapshot {
+    let home = dirs::home_dir().unwrap_or_default();
+    let project = cwd
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(PathBuf::from);
+    tokio::task::spawn_blocking(move || {
+        catalog::load_catalog(&home, project.as_deref())
+    })
+    .await
+    .unwrap_or_else(|error| CatalogSnapshot {
+        mcp_servers: Vec::new(),
+        agents: Vec::new(),
+        skills: Vec::new(),
+        notes: vec![format!("catalog task failed: {error}")],
+    })
 }
 
 #[cfg(test)]

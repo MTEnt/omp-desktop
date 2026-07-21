@@ -15,7 +15,8 @@ export type PanelId =
   | "scratchpad"
   | "browser"
   | "companion"
-  | "launch";
+  | "launch"
+  | "catalog";
 
 export const LAYOUT_STORAGE_KEY = "omp-desktop.layout.v1";
 
@@ -35,6 +36,7 @@ const PANEL_IDS: Record<PanelId, true> = {
   browser: true,
   companion: true,
   launch: true,
+  catalog: true,
 };
 
 export interface LayoutPersistedState {

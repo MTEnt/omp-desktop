@@ -4753,6 +4753,141 @@ button:disabled {
   background: #152033;
 }
 
+/* —— Catalog —— */
+.catalog-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 0;
+  padding: 2px 0 10px;
+}
+
+.catalog-panel__tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.catalog-panel__tab {
+  all: unset;
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 28px;
+  padding: 5px 11px;
+  border: 1px solid #343b45;
+  border-radius: 999px;
+  color: #8b94a1;
+  background: #151920;
+  font-size: 10px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.catalog-panel__tab:hover {
+  color: #d0d5dc;
+  border-color: #4a5540;
+}
+
+.catalog-panel__tab.is-active {
+  border-color: rgba(0, 180, 255, 0.4);
+  color: #d7ecff;
+  background: rgba(0, 180, 255, 0.12);
+}
+
+.catalog-panel__count {
+  min-width: 1.4em;
+  padding: 1px 5px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  color: #9aa6b5;
+  font-size: 9px;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+.catalog-panel__tab.is-active .catalog-panel__count {
+  background: rgba(0, 180, 255, 0.18);
+  color: #b7dcff;
+}
+
+.catalog-panel__toolbar {
+  display: flex;
+  align-items: end;
+  gap: 10px;
+}
+
+.catalog-panel__filter {
+  flex: 1;
+  min-width: 0;
+}
+
+.catalog-panel__notes {
+  margin: 0;
+  padding: 8px 10px;
+  list-style: disc inside;
+  border: 1px solid rgba(230, 180, 70, 0.28);
+  border-radius: 10px;
+  background: rgba(90, 70, 30, 0.28);
+  color: #f0d48a;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.catalog-panel__notes li + li {
+  margin-top: 4px;
+}
+
+.catalog-panel__tabpanel {
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+}
+
+.catalog-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  max-height: min(520px, calc(100vh - 260px));
+  overflow: auto;
+}
+
+.catalog-row {
+  border: 1px solid #243041;
+  border-radius: 12px;
+  background: #121924;
+  padding: 10px 12px;
+}
+
+.catalog-row__body {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.catalog-row__name {
+  color: #eef3fb;
+  font-size: 13px;
+  font-weight: 600;
+  word-break: break-word;
+}
+
+.catalog-row__source {
+  color: #8b9bb4;
+  font-size: 11px;
+  font-family: "SFMono-Regular", Menlo, monospace;
+}
+
+.catalog-row__detail {
+  color: #b7c3d6;
+  font-size: 12px;
+  line-height: 1.4;
+  word-break: break-word;
+}
+
 .companion-panel__frame-wrap {
   display: grid;
   gap: 8px;
