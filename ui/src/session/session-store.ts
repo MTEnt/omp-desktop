@@ -67,6 +67,10 @@ export interface SessionStore {
   closeSession: (sessionId: string) => Promise<void>;
   refreshState: (sessionId: string) => Promise<void>;
   loadSubagents: (sessionId: string) => Promise<void>;
+  loadSubagentMessages: (
+    sessionId: string,
+    input: { subagentId?: string; sessionFile?: string; fromByte?: number },
+  ) => Promise<unknown>;
   send: (message: string, streamingBehavior?: string) => Promise<boolean>;
   abort: () => Promise<void>;
   applyOmpEvent: (sessionId: string, event: unknown) => void;
@@ -294,6 +298,23 @@ const normalizeTodoPhases = (snapshot: unknown): TodoPhase[] => {
   return phases;
 };
 
+const readNumber = (
+  value: Record<string, unknown>,
+  ...keys: string[]
+): number | undefined => {
+  for (const key of keys) {
+    const candidate = value[key];
+    if (typeof candidate === "number" && Number.isFinite(candidate)) {
+      return candidate;
+    }
+    if (typeof candidate === "string" && candidate.trim()) {
+      const parsed = Number(candidate);
+      if (Number.isFinite(parsed)) return parsed;
+    }
+  }
+  return undefined;
+};
+
 const normalizeSubagent = (
   candidate: unknown,
   index: number,
@@ -316,24 +337,113 @@ const normalizeSubagent = (
       }
     }
   }
+  const lastIntent =
+    (progressRecord
+      ? readString(progressRecord, "lastIntent")
+      : undefined) ?? readString(subagent, "lastIntent");
+  const currentTool =
+    (progressRecord
+      ? readString(progressRecord, "currentTool")
+      : undefined) ??
+    readString(subagent, "currentTool") ??
+    null;
   const progress =
     typeof progressValue === "string" || typeof progressValue === "number"
       ? String(progressValue)
-      : (progressRecord
-          ? readString(progressRecord, "lastIntent", "currentTool")
-          : undefined) ??
+      : lastIntent ??
+        (currentTool ?? undefined) ??
         recentOutput ??
         readString(subagent, "task", "currentTask", "description");
   const rawStatus =
     readString(subagent, "status", "state") ??
     (progressRecord ? readString(progressRecord, "status") : undefined) ??
     "unknown";
+  const agent = readString(subagent, "agent", "agentName");
+  const agentSource = readString(subagent, "agentSource", "source");
+  const parentId =
+    readString(subagent, "parentId", "parent", "parentAgentId") ?? null;
+  const sessionFile =
+    readString(subagent, "sessionFile", "session_path", "sessionPath") ?? null;
+  const toolCount =
+    (progressRecord
+      ? readNumber(progressRecord, "toolCount")
+      : undefined) ?? readNumber(subagent, "toolCount");
+  const tokens =
+    (progressRecord ? readNumber(progressRecord, "tokens") : undefined) ??
+    readNumber(subagent, "tokens");
   return {
     id,
     name: readString(subagent, "name", "label", "agent") ?? id,
+    ...(agent ? { agent } : {}),
+    ...(agentSource ? { agentSource } : {}),
     status: rawStatus === "started" ? "running" : rawStatus,
     ...(progress ? { progress } : {}),
+    parentId,
+    sessionFile,
+    ...(toolCount !== undefined ? { toolCount } : {}),
+    ...(tokens !== undefined ? { tokens } : {}),
+    currentTool,
+    ...(lastIntent ? { lastIntent } : {}),
   };
+};
+
+const mergeSubagentInfo = (
+  existing: SubagentInfo,
+  next: SubagentInfo,
+): SubagentInfo => {
+  const merged: SubagentInfo = {
+    ...existing,
+    id: next.id,
+    name: next.name,
+    status: next.status,
+  };
+  if (next.progress !== undefined) merged.progress = next.progress;
+  else if (existing.progress !== undefined) merged.progress = existing.progress;
+
+  if (next.agent !== undefined) merged.agent = next.agent;
+  else if (existing.agent !== undefined) merged.agent = existing.agent;
+
+  if (next.agentSource !== undefined) merged.agentSource = next.agentSource;
+  else if (existing.agentSource !== undefined) {
+    merged.agentSource = existing.agentSource;
+  }
+
+  if (next.parentId !== undefined && next.parentId !== null) {
+    merged.parentId = next.parentId;
+  } else if (existing.parentId !== undefined) {
+    merged.parentId = existing.parentId;
+  } else {
+    merged.parentId = next.parentId ?? null;
+  }
+
+  if (next.sessionFile !== undefined && next.sessionFile !== null) {
+    merged.sessionFile = next.sessionFile;
+  } else if (existing.sessionFile !== undefined) {
+    merged.sessionFile = existing.sessionFile;
+  } else {
+    merged.sessionFile = next.sessionFile ?? null;
+  }
+
+  if (next.toolCount !== undefined) merged.toolCount = next.toolCount;
+  else if (existing.toolCount !== undefined) merged.toolCount = existing.toolCount;
+
+  if (next.tokens !== undefined) merged.tokens = next.tokens;
+  else if (existing.tokens !== undefined) merged.tokens = existing.tokens;
+
+  if (next.currentTool !== undefined && next.currentTool !== null) {
+    merged.currentTool = next.currentTool;
+  } else if (existing.currentTool !== undefined) {
+    merged.currentTool = existing.currentTool;
+  } else {
+    merged.currentTool = next.currentTool ?? null;
+  }
+
+  if (next.lastIntent !== undefined) merged.lastIntent = next.lastIntent;
+  else if (existing.lastIntent !== undefined) {
+    merged.lastIntent = existing.lastIntent;
+  }
+
+  return merged;
 };
 
 const normalizeSubagents = (response: unknown): SubagentInfo[] => {
@@ -878,6 +988,7 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
         error: null,
       }));
       void get().ensureRoleMemoryPreamble("default", session.id);
+      void get().loadSubagents(session.id);
       if (isTauriRuntime()) void get().loadModelRoles();
     } catch (error) {
       set({ error: formatOpenSessionError(error) });
@@ -935,6 +1046,7 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
         error: null,
       }));
       void get().ensureRoleMemoryPreamble("default", session.id);
+      void get().loadSubagents(session.id);
       if (isTauriRuntime()) void get().loadModelRoles();
     } catch (error) {
       set({
@@ -1045,7 +1157,11 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
 
   loadSubagents: async (sessionId) => {
     try {
-      await api.setSubagentSubscription(sessionId, "progress");
+      try {
+        await api.setSubagentSubscription(sessionId, "events");
+      } catch {
+        await api.setSubagentSubscription(sessionId, "progress");
+      }
       const response = await api.rpcCommand(sessionId, "get_subagents");
       if (!get().sessions.some((session) => session.id === sessionId)) return;
       set((state) => ({
@@ -1059,6 +1175,10 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
         set({ error: `Unable to load subagents: ${errorMessage(error)}` });
       }
     }
+  },
+
+  loadSubagentMessages: async (sessionId, input) => {
+    return api.getSubagentMessages(sessionId, input);
   },
 
   send: async (message, streamingBehavior) => {
@@ -1310,42 +1430,70 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
       return;
     }
 
-    if (type === "subagent_lifecycle" || type === "subagent_progress") {
-      const payload = asRecord(event.payload);
+    if (
+      type === "subagent_lifecycle" ||
+      type === "subagent_progress" ||
+      type === "subagent_event"
+    ) {
+      const payload = asRecord(event.payload) ?? asRecord(event);
       if (!payload) return;
+      const eventName =
+        readString(payload, "event", "eventType", "kind", "type") ?? type;
+      const hasIdentity =
+        Boolean(
+          readString(payload, "id", "agentId", "sessionId") ??
+            (asRecord(payload.progress)
+              ? readString(asRecord(payload.progress)!, "id")
+              : undefined),
+        ) || type !== "subagent_event";
       set((state) => {
         const current = state.subagents[sessionId] ?? [];
-        const next = normalizeSubagent(payload, current.length);
-        if (!next) return state;
-        const existingIndex = current.findIndex(
-          (subagent) => subagent.id === next.id,
-        );
-        const subagents = [...current];
-        if (existingIndex === -1) {
-          subagents.push(next);
-        } else {
-          const existing = subagents[existingIndex];
-          subagents[existingIndex] = {
-            ...existing,
-            ...next,
-            ...(next.progress
-              ? { progress: next.progress }
-              : existing.progress
-                ? { progress: existing.progress }
-                : {}),
-          };
+        let subagents = current;
+        let next: SubagentInfo | null = null;
+        if (hasIdentity) {
+          next = normalizeSubagent(payload, current.length);
+          if (next) {
+            const existingIndex = current.findIndex(
+              (subagent) => subagent.id === next!.id,
+            );
+            subagents = [...current];
+            if (existingIndex === -1) {
+              subagents.push(next);
+            } else {
+              subagents[existingIndex] = mergeSubagentInfo(
+                subagents[existingIndex],
+                next,
+              );
+            }
+          }
         }
-        const activity =
-          type === "subagent_lifecycle"
-            ? {
-                ...state.activity,
-                [sessionId]: appendActivity(
-                  state.activity[sessionId] ?? [],
-                  `${next.name} · ${next.status}`,
-                  event,
-                ),
-              }
-            : state.activity;
+        const activityText =
+          type === "subagent_lifecycle" && next
+            ? `${next.name} · ${next.status}`
+            : type === "subagent_event" &&
+                (eventName.startsWith("tool_execution_") ||
+                  eventName.includes("tool"))
+              ? `${next?.name ?? readString(payload, "name", "agent", "label") ?? "subagent"} · ${eventName}${
+                  next?.currentTool || readString(payload, "currentTool", "tool")
+                    ? ` · ${next?.currentTool ?? readString(payload, "currentTool", "tool")}`
+                    : ""
+                }`
+              : type === "subagent_event"
+                ? `${next?.name ?? readString(payload, "name", "agent", "label") ?? "subagent"} · ${eventName}`
+                : null;
+        const activity = activityText
+          ? {
+              ...state.activity,
+              [sessionId]: appendActivity(
+                state.activity[sessionId] ?? [],
+                activityText,
+                event,
+              ),
+            }
+          : state.activity;
+        if (subagents === current && activity === state.activity) {
+          return state;
+        }
         return {
           subagents: {
             ...state.subagents,

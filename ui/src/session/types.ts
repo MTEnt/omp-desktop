@@ -127,8 +127,16 @@ export interface ActivityItem {
 export interface SubagentInfo {
   id: string;
   name: string;
+  agent?: string;
+  agentSource?: string;
   status: string;
   progress?: string;
+  parentId?: string | null;
+  sessionFile?: string | null;
+  toolCount?: number;
+  tokens?: number;
+  currentTool?: string | null;
+  lastIntent?: string | null;
 }
 
 export interface TodoTask {

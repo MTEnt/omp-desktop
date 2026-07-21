@@ -526,7 +526,7 @@ describe("session commands", () => {
     assert.equal(refreshes, 1);
   });
 
-  it("subscribes to progress before loading subagents", async () => {
+  it("subscribes to events before loading subagents", async () => {
     const originalSetSubagentSubscription = api.setSubagentSubscription;
     const originalRpcCommand = api.rpcCommand;
     const commands: string[] = [];
@@ -562,7 +562,7 @@ describe("session commands", () => {
     }
 
     assert.deepEqual(commands, [
-      "set_subagent_subscription:progress",
+      "set_subagent_subscription:events",
       "get_subagents",
     ]);
     assert.deepEqual(useSessionStore.getState().subagents["session-1"], [
@@ -571,7 +571,46 @@ describe("session commands", () => {
         name: "Explorer",
         status: "running",
         progress: "Tracing state",
+        parentId: null,
+        sessionFile: null,
+        currentTool: null,
       },
+    ]);
+  });
+
+  it("falls back to progress subscription when events fail", async () => {
+    const originalSetSubagentSubscription = api.setSubagentSubscription;
+    const originalRpcCommand = api.rpcCommand;
+    const commands: string[] = [];
+    api.setSubagentSubscription = async (_sessionId, level) => {
+      commands.push(`set_subagent_subscription:${level}`);
+      if (level === "events") {
+        throw new Error("events unsupported");
+      }
+      return {};
+    };
+    api.rpcCommand = async (_sessionId, command) => {
+      commands.push(command);
+      return command === "get_subagents"
+        ? {
+            type: "response",
+            success: true,
+            data: { subagents: [] },
+          }
+        : {};
+    };
+
+    try {
+      await useSessionStore.getState().loadSubagents("session-1");
+    } finally {
+      api.setSubagentSubscription = originalSetSubagentSubscription;
+      api.rpcCommand = originalRpcCommand;
+    }
+
+    assert.deepEqual(commands, [
+      "set_subagent_subscription:events",
+      "set_subagent_subscription:progress",
+      "get_subagents",
     ]);
   });
 
@@ -584,6 +623,8 @@ describe("session commands", () => {
         agent: "code-reviewer",
         status: "started",
         index: 0,
+        parentId: "root-1",
+        sessionFile: "/tmp/agent-7.jsonl",
       },
     });
     apply("session-1", {
@@ -595,6 +636,9 @@ describe("session commands", () => {
           id: "agent-7",
           status: "running",
           lastIntent: "Tracing RPC events",
+          toolCount: 3,
+          tokens: 1200,
+          currentTool: "read",
         },
       },
     });
@@ -612,8 +656,84 @@ describe("session commands", () => {
       {
         id: "agent-7",
         name: "code-reviewer",
+        agent: "code-reviewer",
         status: "completed",
         progress: "Tracing RPC events",
+        parentId: "root-1",
+        sessionFile: "/tmp/agent-7.jsonl",
+        toolCount: 3,
+        tokens: 1200,
+        currentTool: "read",
+        lastIntent: "Tracing RPC events",
+      },
+    ]);
+  });
+
+  it("upserts subagent identity from subagent_event frames", () => {
+    const apply = useSessionStore.getState().applyOmpEvent;
+    apply("session-1", {
+      type: "subagent_event",
+      payload: {
+        id: "agent-9",
+        agent: "scout",
+        status: "running",
+        event: "tool_execution_start",
+        currentTool: "grep",
+        parentId: "root-2",
+        sessionFile: "/tmp/agent-9.jsonl",
+      },
+    });
+
+    const state = useSessionStore.getState();
+    assert.deepEqual(state.subagents["session-1"], [
+      {
+        id: "agent-9",
+        name: "scout",
+        agent: "scout",
+        status: "running",
+        progress: "grep",
+        parentId: "root-2",
+        sessionFile: "/tmp/agent-9.jsonl",
+        currentTool: "grep",
+      },
+    ]);
+    assert.match(
+      state.activity["session-1"].at(-1)?.text ?? "",
+      /scout · tool_execution_start · grep/,
+    );
+  });
+
+  it("loads subagent messages through the session store", async () => {
+    const originalGetSubagentMessages = api.getSubagentMessages;
+    const calls: unknown[] = [];
+    api.getSubagentMessages = async (sessionId, params) => {
+      calls.push({ sessionId, params });
+      return { messages: [{ role: "assistant", text: "hello" }] };
+    };
+
+    try {
+      const response = await useSessionStore
+        .getState()
+        .loadSubagentMessages("session-1", {
+          subagentId: "agent-9",
+          sessionFile: "/tmp/agent-9.jsonl",
+          fromByte: 0,
+        });
+      assert.deepEqual(response, {
+        messages: [{ role: "assistant", text: "hello" }],
+      });
+    } finally {
+      api.getSubagentMessages = originalGetSubagentMessages;
+    }
+
+    assert.deepEqual(calls, [
+      {
+        sessionId: "session-1",
+        params: {
+          subagentId: "agent-9",
+          sessionFile: "/tmp/agent-9.jsonl",
+          fromByte: 0,
+        },
       },
     ]);
   });
