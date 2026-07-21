@@ -29,6 +29,12 @@ export interface GitStatus {
   error: string | null;
 }
 
+export interface DirEntryDto {
+  name: string;
+  path: string;
+  isDir: boolean;
+}
+
 export interface SshHostInfo {
   name: string;
   host: string;

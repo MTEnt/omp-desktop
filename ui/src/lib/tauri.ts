@@ -23,6 +23,7 @@ import type {
   SessionInfo,
   ExtensionUiResponse,
   GitStatus,
+  DirEntryDto,
 } from "../session/types.ts";
 
 const getInternals = (): { invoke?: unknown } | null => {
@@ -49,6 +50,19 @@ export const api = {
   getSetupStatus: () => invoke<SetupStatus>("get_setup_status"),
 
   getGitStatus: (cwd: string) => invoke<GitStatus>("get_git_status", { cwd }),
+
+  listProjectDir: (root: string, path?: string | null) =>
+    invoke<DirEntryDto[]>("list_project_dir", {
+      root,
+      path: path ?? null,
+    }),
+
+  readProjectFile: (root: string, path: string, maxBytes?: number | null) =>
+    invoke<string>("read_project_file", {
+      root,
+      path,
+      maxBytes: maxBytes ?? null,
+    }),
 
   installImpeccable: () => invoke<SetupStatus>("install_impeccable"),
 

@@ -3,6 +3,7 @@ mod error;
 mod memory;
 mod git_status;
 mod image_attach;
+mod project_fs;
 mod omp_config;
 mod omp_context;
 mod pty;
@@ -93,6 +94,8 @@ pub fn run() {
             commands::delete_historic_session,
             commands::rename_historic_session,
             commands::get_git_status,
+            commands::list_project_dir,
+            commands::read_project_file,
         ])
         .run(tauri::generate_context!())
         .unwrap_or_else(|error| eprintln!("OMP Desktop runtime error: {error}"));

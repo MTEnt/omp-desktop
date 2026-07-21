@@ -1,5 +1,6 @@
 use crate::error::AppError;
 use crate::git_status::{self, GitStatus};
+use crate::project_fs::{self, DirEntryDto, DEFAULT_MAX_BYTES};
 use crate::image_attach::{images_to_rpc_value, prepare_from_raw_inputs, PreparedImage, RawImageInput};
 use crate::memory::{self, JobCard, MemoryStore, PersistentAgent, RoleMemoryNote, RoleScratchpad};
 use crate::omp_config::{self, AvailableModel, ModelRolesSnapshot};
@@ -1019,6 +1020,32 @@ pub async fn get_git_status(cwd: String) -> GitStatus {
             dirty: false,
             error: Some(format!("git status task failed: {error}")),
         })
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub async fn list_project_dir(
+    root: String,
+    path: Option<String>,
+) -> Result<Vec<DirEntryDto>, AppError> {
+    let root = PathBuf::from(root.trim());
+    let rel = PathBuf::from(path.unwrap_or_default().trim());
+    tokio::task::spawn_blocking(move || project_fs::list_project_dir(&root, &rel))
+        .await
+        .map_err(|e| AppError::Msg(format!("list_project_dir join error: {e}")))?
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub async fn read_project_file(
+    root: String,
+    path: String,
+    max_bytes: Option<usize>,
+) -> Result<String, AppError> {
+    let root = PathBuf::from(root.trim());
+    let file = PathBuf::from(path.trim());
+    let limit = max_bytes.unwrap_or(DEFAULT_MAX_BYTES);
+    tokio::task::spawn_blocking(move || project_fs::read_project_file(&root, &file, limit))
+        .await
+        .map_err(|e| AppError::Msg(format!("read_project_file join error: {e}")))?
 }
 
 #[cfg(test)]
