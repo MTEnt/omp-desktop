@@ -234,6 +234,16 @@ export const CommandPalette = ({ open, onOpenChange }: CommandPaletteProps) => {
         run: () => openDrawer("settings"),
       },
       {
+        id: "sign-in-providers",
+        group: "Preferences",
+        label: "Sign in to providers",
+        detail: activeSessionId
+          ? "Open settings provider login"
+          : "Open a session first, then authenticate providers",
+        keywords: "login auth authenticate oauth providers accounts",
+        run: () => openDrawer("settings"),
+      },
+      {
         id: "focus-terminal",
         group: "Session",
         label: "Focus terminal",

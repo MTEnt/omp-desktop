@@ -1,5 +1,10 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useState, type FormEvent } from "react";
 
+import { api } from "../lib/tauri.ts";
+import {
+  normalizeLoginProviders,
+  type LoginProvider,
+} from "../session/providers.ts";
 import { useSessionStore } from "../session/session-store.ts";
 import type { AppSettings, ApprovalMode } from "../session/types.ts";
 
@@ -19,10 +24,18 @@ export const SettingsPanel = () => {
   const settings = useSessionStore((state) => state.settings);
   const loadSettings = useSessionStore((state) => state.loadSettings);
   const saveSettings = useSessionStore((state) => state.saveSettings);
+  const activeSessionId = useSessionStore((state) => state.activeSessionId);
   const [form, setForm] = useState<AppSettings>(settings ?? defaultSettings);
   const [saveState, setSaveState] = useState<
     "idle" | "saving" | "saved" | "error"
   >("idle");
+  const [providers, setProviders] = useState<LoginProvider[]>([]);
+  const [providersState, setProvidersState] = useState<
+    "idle" | "loading" | "ready" | "error"
+  >("idle");
+  const [providersError, setProvidersError] = useState<string | null>(null);
+  const [signingInId, setSigningInId] = useState<string | null>(null);
+  const [loginMessage, setLoginMessage] = useState<string | null>(null);
 
   useEffect(() => {
     void loadSettings();
@@ -31,6 +44,34 @@ export const SettingsPanel = () => {
   useEffect(() => {
     if (settings) setForm(settings);
   }, [settings]);
+
+  const loadProviders = useCallback(async (sessionId: string) => {
+    setProvidersState("loading");
+    setProvidersError(null);
+    try {
+      const raw = await api.getLoginProviders(sessionId);
+      setProviders(normalizeLoginProviders(raw));
+      setProvidersState("ready");
+    } catch (error) {
+      setProviders([]);
+      setProvidersState("error");
+      setProvidersError(
+        error instanceof Error ? error.message : "Unable to load login providers",
+      );
+    }
+  }, []);
+
+  useEffect(() => {
+    setLoginMessage(null);
+    setSigningInId(null);
+    if (!activeSessionId) {
+      setProviders([]);
+      setProvidersState("idle");
+      setProvidersError(null);
+      return;
+    }
+    void loadProviders(activeSessionId);
+  }, [activeSessionId, loadProviders]);
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -45,6 +86,24 @@ export const SettingsPanel = () => {
     });
     setSaveState(didSave ? "saved" : "error");
   };
+
+  const signIn = async (providerId: string) => {
+    if (!activeSessionId) return;
+    setSigningInId(providerId);
+    setLoginMessage(null);
+    try {
+      await api.loginProvider(activeSessionId, providerId);
+      setLoginMessage("Sign-in started — complete auth in your browser if prompted.");
+      await loadProviders(activeSessionId);
+    } catch (error) {
+      setLoginMessage(
+        error instanceof Error ? error.message : "Sign-in failed",
+      );
+    } finally {
+      setSigningInId(null);
+    }
+  };
+
   return (
     <form className="settings-form" onSubmit={(event) => void submit(event)}>
       <label className="panel-field">
@@ -138,6 +197,86 @@ export const SettingsPanel = () => {
           <option value="light">Light</option>
         </select>
       </label>
+
+      <section className="settings-providers" aria-label="Provider login">
+        <div className="settings-providers__header">
+          <div>
+            <h3>Provider login</h3>
+            <p>Authenticate model providers through the active OMP session.</p>
+          </div>
+          <button
+            type="button"
+            className="panel-button"
+            disabled={!activeSessionId || providersState === "loading"}
+            onClick={() => {
+              if (activeSessionId) void loadProviders(activeSessionId);
+            }}
+          >
+            {providersState === "loading" ? "Refreshing…" : "Refresh"}
+          </button>
+        </div>
+
+        {!activeSessionId ? (
+          <p className="panel-feedback">Open a session to manage provider login</p>
+        ) : providersState === "error" ? (
+          <p className="panel-feedback panel-feedback--error">
+            {providersError ?? "Unable to load login providers"}
+          </p>
+        ) : providersState === "loading" && providers.length === 0 ? (
+          <p className="panel-feedback">Loading providers…</p>
+        ) : providers.length === 0 ? (
+          <p className="panel-feedback">No login providers reported by this session.</p>
+        ) : (
+          <ul className="settings-providers__list">
+            {providers.map((provider) => {
+              const authenticated = provider.authenticated === true;
+              return (
+                <li key={provider.id} className="settings-providers__row">
+                  <div className="settings-providers__meta">
+                    <strong>{provider.name}</strong>
+                    <span
+                      className={
+                        authenticated
+                          ? "settings-providers__badge settings-providers__badge--ok"
+                          : "settings-providers__badge"
+                      }
+                    >
+                      {authenticated ? "Signed in" : "Not signed in"}
+                    </span>
+                    {provider.detail ? (
+                      <span className="settings-providers__detail">{provider.detail}</span>
+                    ) : null}
+                  </div>
+                  <button
+                    type="button"
+                    className="panel-button"
+                    disabled={signingInId !== null}
+                    onClick={() => void signIn(provider.id)}
+                  >
+                    {signingInId === provider.id
+                      ? "Starting…"
+                      : authenticated
+                        ? "Re-auth"
+                        : "Sign in"}
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+
+        {loginMessage ? (
+          <p
+            className={
+              loginMessage.toLowerCase().includes("fail")
+                ? "panel-feedback panel-feedback--error"
+                : "panel-feedback"
+            }
+          >
+            {loginMessage}
+          </p>
+        ) : null}
+      </section>
 
       <div className="settings-form__actions">
         <button
