@@ -52,6 +52,74 @@ struct SessionEventEnvelope {
     event: Value,
 }
 
+/// Strip heavy nested fields before crossing the Tauri IPC boundary.
+/// OMP `message_update` / `agent_end` frames embed full `partial` trees and
+/// thinking signatures; those payloads can fail to emit and leave the UI stuck
+/// on "Working…" after a successful `agent_start`.
+fn slim_omp_event(mut event: Value) -> Value {
+    let Some(root) = event.as_object_mut() else {
+        return event;
+    };
+
+    if let Some(assistant) = root
+        .get_mut("assistantMessageEvent")
+        .and_then(Value::as_object_mut)
+    {
+        assistant.remove("partial");
+    }
+
+    if let Some(message) = root.get_mut("message").and_then(Value::as_object_mut) {
+        slim_message_object(message);
+    }
+
+    if root.get("type").and_then(Value::as_str) == Some("agent_end") {
+        if let Some(messages) = root.get_mut("messages").and_then(Value::as_array_mut) {
+            for message in messages.iter_mut() {
+                if let Some(object) = message.as_object_mut() {
+                    slim_message_object(object);
+                }
+            }
+        }
+    }
+
+    event
+}
+
+fn slim_message_object(message: &mut serde_json::Map<String, Value>) {
+    if let Some(content) = message.get_mut("content").and_then(Value::as_array_mut) {
+        for block in content.iter_mut() {
+            if let Some(object) = block.as_object_mut() {
+                object.remove("thinkingSignature");
+            }
+        }
+    }
+    for key in [
+        "usage",
+        "compat",
+        "compatConfig",
+        "cost",
+        "cttl",
+        "stopReason",
+        "duration",
+        "ttft",
+    ] {
+        message.remove(key);
+    }
+}
+
+fn emit_omp_event(app: &AppHandle, session_id: &str, event: Value) {
+    let slim = slim_omp_event(event);
+    if let Err(error) = app.emit(
+        "omp-event",
+        SessionEventEnvelope {
+            session_id: session_id.to_owned(),
+            event: slim,
+        },
+    ) {
+        log::warn!("failed to emit omp-event for {session_id}: {error}");
+    }
+}
+
 #[tauri::command(rename_all = "camelCase")]
 pub async fn get_model_roles() -> Result<ModelRolesSnapshot, AppError> {
     omp_config::load_model_roles()
@@ -466,13 +534,7 @@ pub async fn create_session(
     let session_id = info.id.clone();
     tauri::async_runtime::spawn(async move {
         while let Some(event) = events.recv().await {
-            let _ = event_app.emit(
-                "omp-event",
-                SessionEventEnvelope {
-                    session_id: session_id.clone(),
-                    event,
-                },
-            );
+            emit_omp_event(&event_app, &session_id, event);
         }
         event_app
             .state::<AppState>()
@@ -592,13 +654,7 @@ pub async fn create_ssh_session(
     let session_id = info.id.clone();
     tokio::spawn(async move {
         while let Some(event) = events.recv().await {
-            let _ = app_handle.emit(
-                "omp-event",
-                SessionEventEnvelope {
-                    session_id: session_id.clone(),
-                    event,
-                },
-            );
+            emit_omp_event(&app_handle, &session_id, event);
         }
         app_handle
             .state::<AppState>()
@@ -941,5 +997,44 @@ mod tests {
         };
 
         assert_eq!(omp_binary_or_fallback(&settings), PathBuf::from("omp"));
+    }
+
+    #[test]
+    fn slim_omp_event_strips_partial_and_signatures() {
+        let slim = slim_omp_event(json!({
+            "type": "message_update",
+            "assistantMessageEvent": {
+                "type": "text_delta",
+                "delta": "hi",
+                "partial": { "role": "assistant", "content": [] }
+            },
+            "message": {
+                "role": "assistant",
+                "content": [{
+                    "type": "thinking",
+                    "thinking": "note",
+                    "thinkingSignature": "huge"
+                }],
+                "usage": { "totalTokens": 99 }
+            }
+        }));
+
+        assert_eq!(
+            slim,
+            json!({
+                "type": "message_update",
+                "assistantMessageEvent": {
+                    "type": "text_delta",
+                    "delta": "hi"
+                },
+                "message": {
+                    "role": "assistant",
+                    "content": [{
+                        "type": "thinking",
+                        "thinking": "note"
+                    }]
+                }
+            })
+        );
     }
 }
