@@ -14,6 +14,7 @@ use tokio::sync::{mpsc, oneshot, watch, Mutex};
 use tokio::time::{timeout, Duration};
 
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
+const STDERR_TAIL_CHARS: usize = 1_200;
 
 type PendingRequests = Arc<Mutex<HashMap<String, oneshot::Sender<Value>>>>;
 
@@ -24,7 +25,25 @@ pub struct RpcClient {
     next_id: AtomicU64,
     pending: PendingRequests,
     ready: watch::Receiver<bool>,
+    stderr_tail: Arc<Mutex<String>>,
     events: Option<mpsc::UnboundedReceiver<Value>>,
+}
+
+fn append_stderr_tail(buffer: &mut String, chunk: &str) {
+    buffer.push_str(chunk);
+    if buffer.len() > STDERR_TAIL_CHARS {
+        let drain = buffer.len() - STDERR_TAIL_CHARS;
+        buffer.drain(..drain);
+    }
+}
+
+fn exited_before_ready_error(stderr_tail: &str) -> AppError {
+    let trimmed = stderr_tail.trim();
+    if trimmed.is_empty() {
+        AppError::from("OMP RPC exited before ready")
+    } else {
+        AppError::from(format!("OMP RPC exited before ready\n{trimmed}"))
+    }
 }
 
 impl RpcClient {
@@ -40,6 +59,7 @@ impl RpcClient {
             .args(args)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
             .kill_on_drop(true);
         if let Some(path) = settings::runtime_command_path(Path::new(program)) {
             command.env("PATH", path);
@@ -53,11 +73,26 @@ impl RpcClient {
             .stdout
             .take()
             .ok_or_else(|| AppError::from("RPC child stdout was not piped"))?;
+        let stderr = child
+            .stderr
+            .take()
+            .ok_or_else(|| AppError::from("RPC child stderr was not piped"))?;
 
         let pending: PendingRequests = Arc::new(Mutex::new(HashMap::new()));
         let reader_pending = Arc::clone(&pending);
         let (events_tx, events) = mpsc::unbounded_channel();
         let (ready_tx, ready) = watch::channel(false);
+        let stderr_tail = Arc::new(Mutex::new(String::new()));
+        let stderr_sink = Arc::clone(&stderr_tail);
+
+        tokio::spawn(async move {
+            let mut lines = BufReader::new(stderr).lines();
+            while let Ok(Some(line)) = lines.next_line().await {
+                let mut buffer = stderr_sink.lock().await;
+                append_stderr_tail(&mut buffer, &line);
+                append_stderr_tail(&mut buffer, "\n");
+            }
+        });
 
         tokio::spawn(async move {
             let mut lines = BufReader::new(stdout).lines();
@@ -106,6 +141,7 @@ impl RpcClient {
             next_id: AtomicU64::new(0),
             pending,
             ready,
+            stderr_tail,
             events: Some(events),
         })
     }
@@ -120,19 +156,34 @@ impl RpcClient {
             return Ok(());
         }
 
-        timeout(wait_timeout, async {
+        let stderr_tail = Arc::clone(&self.stderr_tail);
+        let result = timeout(wait_timeout, async {
             loop {
-                ready
-                    .changed()
-                    .await
-                    .map_err(|_| AppError::from("OMP RPC exited before ready"))?;
+                if ready.changed().await.is_err() {
+                    let stderr = stderr_tail.lock().await.clone();
+                    return Err(exited_before_ready_error(&stderr));
+                }
                 if *ready.borrow() {
                     return Ok(());
                 }
             }
         })
-        .await
-        .map_err(|_| AppError::from("timed out waiting for OMP RPC ready"))?
+        .await;
+
+        match result {
+            Ok(inner) => inner,
+            Err(_) => {
+                let stderr = self.stderr_tail.lock().await;
+                let trimmed = stderr.trim();
+                if trimmed.is_empty() {
+                    Err(AppError::from("timed out waiting for OMP RPC ready"))
+                } else {
+                    Err(AppError::from(format!(
+                        "timed out waiting for OMP RPC ready\n{trimmed}"
+                    )))
+                }
+            }
+        }
     }
 
     pub async fn request(&self, command_type: &str, params: Value) -> AppResult<Value> {
