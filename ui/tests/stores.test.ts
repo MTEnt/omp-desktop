@@ -36,6 +36,7 @@ beforeEach(() => {
     todos: {},
     subagents: {},
     states: {},
+    commandsBySession: {},
     turnStats: {},
     turnTiming: {},
     error: null,
@@ -462,6 +463,40 @@ describe("session commands", () => {
     assert.deepEqual(state.subagents["session-2"], []);
     assert.equal(state.streaming["session-2"], false);
   });
+
+  it("loads and merges host slash commands per session", async () => {
+    const originalGetAvailableCommands = api.getAvailableCommands;
+    api.getAvailableCommands = async (sessionId) => {
+      assert.equal(sessionId, "session-1");
+      return {
+        type: "response",
+        success: true,
+        data: {
+          commands: [
+            { name: "help", description: "Show help" },
+            { name: "compact", description: "from omp" },
+          ],
+        },
+      };
+    };
+
+    try {
+      await useSessionStore.getState().loadAvailableCommands("session-1");
+    } finally {
+      api.getAvailableCommands = originalGetAvailableCommands;
+    }
+
+    assert.deepEqual(useSessionStore.getState().commandsBySession["session-1"], [
+      {
+        name: "compact",
+        description: "Compact session context",
+        source: "host",
+      },
+      { name: "export", description: "Export session HTML", source: "host" },
+      { name: "help", description: "Show help", source: "omp" },
+    ]);
+  });
+
 
   it("passes a resume id or path when creating a session", async () => {
     const originalCreateSession = api.createSession;
@@ -1002,6 +1037,10 @@ describe("session commands", () => {
       subagents: { "session-1": [], "session-2": [] },
       states: { "session-1": {}, "session-2": {} },
       streaming: { "session-1": true, "session-2": false },
+      commandsBySession: {
+        "session-1": [{ name: "help", source: "omp" }],
+        "session-2": [{ name: "export", source: "host" }],
+      },
     }));
 
     try {
@@ -1021,6 +1060,7 @@ describe("session commands", () => {
       state.subagents,
       state.states,
       state.streaming,
+      state.commandsBySession,
     ]) {
       assert.equal("session-1" in sessionState, false);
     }

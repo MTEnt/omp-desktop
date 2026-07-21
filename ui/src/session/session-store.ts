@@ -39,6 +39,12 @@ import {
   parseSessionStats,
   type SessionTurnStats,
 } from "./session-stats.ts";
+import {
+  HOST_SLASH_COMMANDS,
+  mergeSlashCommands,
+  normalizeCommandsPayload,
+  type SlashCommand,
+} from "./slash.ts";
 
 export type { SessionTurnStats } from "./session-stats.ts";
 export {
@@ -73,6 +79,7 @@ export interface SessionStore {
   reviewFiles: Record<string, ReviewFile[]>;
   states: Record<string, unknown>;
   turnStats: Record<string, SessionTurnStats>;
+  commandsBySession: Record<string, SlashCommand[]>;
   turnTiming: Record<string, number>;
   error: string | null;
   streaming: Record<string, boolean>;
@@ -97,6 +104,7 @@ export interface SessionStore {
   refreshState: (sessionId: string) => Promise<void>;
   refreshSessionStats: (sessionId: string) => Promise<void>;
   loadSubagents: (sessionId: string) => Promise<void>;
+  loadAvailableCommands: (sessionId: string) => Promise<void>;
   loadSubagentMessages: (
     sessionId: string,
     input: { subagentId?: string; sessionFile?: string; fromByte?: number },
@@ -903,6 +911,7 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
   todos: {},
   subagents: {},
   reviewFiles: {},
+  commandsBySession: {},
   states: {},
   turnStats: {},
   turnTiming: {},
@@ -1045,6 +1054,7 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
         companions: { ...state.companions, [session.id]: [] },
         error: null,
       }));
+      void get().loadAvailableCommands(session.id);
       void get().ensureRoleMemoryPreamble("default", session.id);
       void get().loadSubagents(session.id);
       if (isTauriRuntime()) void get().loadModelRoles();
@@ -1110,6 +1120,7 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
         error: null,
       }));
       void get().ensureRoleMemoryPreamble("default", session.id);
+      void get().loadAvailableCommands(session.id);
       void get().loadSubagents(session.id);
       if (isTauriRuntime()) void get().loadModelRoles();
     } catch (error) {
@@ -1181,6 +1192,7 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
         subagents: withoutSession(state.subagents, sessionId),
         reviewFiles: withoutSession(state.reviewFiles, sessionId),
         states: withoutSession(state.states, sessionId),
+        commandsBySession: withoutSession(state.commandsBySession, sessionId),
         turnStats: withoutSession(state.turnStats, sessionId),
         turnTiming: withoutSession(state.turnTiming, sessionId),
         streaming: withoutSession(state.streaming, sessionId),
@@ -1239,6 +1251,29 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
       });
     } catch {
       // Stats are optional chrome; never surface transport noise in the strip.
+    }
+  },
+
+  loadAvailableCommands: async (sessionId) => {
+    try {
+      const raw = await api.getAvailableCommands(sessionId);
+      if (!get().sessions.some((session) => session.id === sessionId)) return;
+      const remote = normalizeCommandsPayload(raw);
+      const commands = mergeSlashCommands(HOST_SLASH_COMMANDS, remote);
+      set((state) => ({
+        commandsBySession: {
+          ...state.commandsBySession,
+          [sessionId]: commands,
+        },
+      }));
+    } catch {
+      if (!get().sessions.some((session) => session.id === sessionId)) return;
+      set((state) => ({
+        commandsBySession: {
+          ...state.commandsBySession,
+          [sessionId]: [...HOST_SLASH_COMMANDS],
+        },
+      }));
     }
   },
 
