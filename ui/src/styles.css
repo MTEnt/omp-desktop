@@ -3997,3 +3997,162 @@ button:disabled {
 .settings-keys__input-row input:disabled {
   opacity: 0.55;
 }
+
+.agents-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.agents-roles__row {
+  width: 100%;
+  appearance: none;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.agents-roles__row.is-active {
+  background: rgba(0, 180, 255, 0.08);
+}
+
+.agents-roles__row.is-active .settings-list__title {
+  color: var(--ink);
+}
+
+.agents-models {
+  max-height: min(240px, 34vh);
+  overflow: auto;
+  border-top: 1px solid var(--line-soft);
+}
+
+.agents-models__provider {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 7px 4px 3px;
+  color: #69727e;
+  background: rgba(15, 18, 24, 0.96);
+  font-family: "SFMono-Regular", Menlo, monospace;
+  font-size: 7px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.agents-models__option {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  width: 100%;
+  margin: 0;
+  padding: 7px 4px;
+  border: 0;
+  border-bottom: 1px solid var(--line-soft);
+  background: transparent;
+  color: #c3c9d2;
+  text-align: left;
+  cursor: pointer;
+}
+
+.agents-models__option span:last-child {
+  color: #4f5864;
+  font-family: "SFMono-Regular", Menlo, monospace;
+  font-size: 8px;
+}
+
+.agents-models__option:hover {
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.agents-models__option.is-selected {
+  background: rgba(0, 180, 255, 0.1);
+  color: var(--ink);
+}
+
+.agents-presets {
+  display: flex;
+  flex-direction: column;
+}
+
+.agents-presets__row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  padding: 8px 4px;
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.agents-presets__save {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 6px;
+  align-items: end;
+}
+
+.agents-thinking {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 4px;
+}
+
+.agents-thinking__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+  color: #929ba7;
+  font-family: "SFMono-Regular", Menlo, monospace;
+  font-size: 7px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.agents-thinking__head em {
+  color: #69727e;
+  font-style: normal;
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 9px;
+}
+
+.agents-thinking__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.agents-chip {
+  min-height: 26px;
+  padding: 0 9px;
+  border: 1px solid #303741;
+  border-radius: 5px;
+  color: #aeb5c0;
+  background: #151820;
+  font-size: 9px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.agents-chip:hover {
+  border-color: #4a5540;
+  color: #dce4d4;
+}
+
+.agents-chip.is-active {
+  border-color: rgba(0, 180, 255, 0.45);
+  color: var(--ink);
+  background: rgba(0, 180, 255, 0.12);
+}
+
+.role-chip:hover {
+  border-color: #4a5540;
+  color: #dce4d4;
+  background: #1a1e24;
+}
+
+.role-chip.is-unset .role-chip__model {
+  color: #4f5864;
+}

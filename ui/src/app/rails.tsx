@@ -21,6 +21,7 @@ const leftItems: RailItem[] = [
   { id: "chat", label: "Chat", shortcut: "⌘1" },
   { id: "sessions", label: "Sessions", shortcut: "⌘2" },
   { id: "project", label: "Project", shortcut: "⌘3" },
+  { id: "agents", label: "Agents", shortcut: "⌘M" },
   { id: "settings", label: "Settings", shortcut: "⌘," },
   { id: "terminal", label: "Terminal", shortcut: "⌘J" },
 ];
@@ -54,6 +55,16 @@ const Icon = ({ target }: { target: RailTarget }) => {
       break;
     case "project":
       shape = <path d="M3.5 7h6l2-2h9v13.5h-17z" />;
+      break;
+    case "agents":
+      shape = (
+        <>
+          <circle cx="12" cy="7.5" r="2.5" />
+          <circle cx="6.5" cy="11" r="2" />
+          <circle cx="17.5" cy="11" r="2" />
+          <path d="M7 18.5c.5-2.8 2.4-4.2 5-4.2s4.5 1.4 5 4.2M3.5 17.5c.3-1.8 1.2-2.7 2.8-2.7M20.5 17.5c-.3-1.8-1.2-2.7-2.8-2.7" />
+        </>
+      );
       break;
     case "settings":
       shape = (

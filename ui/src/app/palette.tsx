@@ -30,6 +30,7 @@ interface AvailableModel {
 const panelActions: Array<{ id: PanelId; label: string }> = [
   { id: "sessions", label: "Sessions" },
   { id: "project", label: "Project" },
+  { id: "agents", label: "Agents" },
   { id: "plan", label: "Plan" },
   { id: "activity", label: "Activity" },
   { id: "subagents", label: "Subagents" },

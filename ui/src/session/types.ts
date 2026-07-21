@@ -47,6 +47,11 @@ export interface SshProbeResult {
   remoteCwd?: string | null;
 }
 
+export interface ModelRolePreset {
+  name: string;
+  roles: Record<string, string>;
+}
+
 export interface AppSettings {
   approvalMode: ApprovalMode;
   ompBinary?: string | null;
