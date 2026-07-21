@@ -3,11 +3,21 @@ import {
   useMemo,
   useRef,
   useState,
+  type ClipboardEvent,
+  type DragEvent,
   type FormEvent,
   type KeyboardEvent,
 } from "react";
 
 import { api } from "../lib/tauri.ts";
+import {
+  MAX_COMPOSER_IMAGES,
+  formatByteLen,
+  nextAttachmentId,
+  readFileAsBase64,
+  takeImageFiles,
+  type ComposerAttachment,
+} from "./image-attach.ts";
 import {
   extractSlashState,
   filterSlashCommands,
@@ -33,7 +43,10 @@ export const Composer = () => {
   const [aborting, setAborting] = useState(false);
   const [slashOpen, setSlashOpen] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState(0);
+  const [attachments, setAttachments] = useState<ComposerAttachment[]>([]);
+  const [dragOver, setDragOver] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const commands =
     (activeSessionId && commandsBySession[activeSessionId]) || EMPTY_COMMANDS;
@@ -56,6 +69,14 @@ export const Composer = () => {
     setCursor(0);
     setSlashOpen(false);
     setSelectedIndex(0);
+    setAttachments((prev) => {
+      for (const item of prev) {
+        if (item.previewUrl.startsWith("blob:")) {
+          URL.revokeObjectURL(item.previewUrl);
+        }
+      }
+      return [];
+    });
   }, [activeSessionId]);
 
   useEffect(() => {
@@ -102,7 +123,9 @@ export const Composer = () => {
   }, []);
 
   const message = draft.trim();
-  const canSend = Boolean(activeSessionId && message && !sending);
+  const canSend = Boolean(
+    activeSessionId && (message || attachments.length > 0) && !sending,
+  );
 
   const syncCursor = (el: HTMLTextAreaElement | null = textareaRef.current) => {
     if (!el) return;
@@ -171,12 +194,69 @@ export const Composer = () => {
     replaceSlashToken(command.name);
   };
 
+  const addFiles = async (files: File[]) => {
+    if (!files.length) return;
+    const remaining = MAX_COMPOSER_IMAGES - attachments.length;
+    const chosen = takeImageFiles(files, remaining);
+    if (!chosen.length) {
+      if (files.length > 0 && remaining <= 0) {
+        useSessionStore.setState({
+          error: `At most ${MAX_COMPOSER_IMAGES} images can be attached`,
+        });
+      }
+      return;
+    }
+    if (files.filter((f) => takeImageFiles([f], 1).length > 0).length > remaining) {
+      useSessionStore.setState({
+        error: `At most ${MAX_COMPOSER_IMAGES} images can be attached`,
+      });
+    }
+    try {
+      const next: ComposerAttachment[] = [];
+      for (const file of chosen) {
+        const read = await readFileAsBase64(file);
+        next.push({
+          id: nextAttachmentId(),
+          mimeType: read.mimeType,
+          previewUrl: read.previewUrl,
+          byteLen: read.byteLen,
+          dataBase64: read.dataBase64,
+          name: file.name,
+        });
+      }
+      setAttachments((prev) => [...prev, ...next].slice(0, MAX_COMPOSER_IMAGES));
+    } catch (error) {
+      const text = error instanceof Error ? error.message : String(error);
+      useSessionStore.setState({
+        error: `Unable to attach image: ${text}`,
+      });
+    }
+  };
+
+  const removeAttachment = (id: string) => {
+    setAttachments((prev) => {
+      const target = prev.find((item) => item.id === id);
+      if (target?.previewUrl.startsWith("blob:")) {
+        URL.revokeObjectURL(target.previewUrl);
+      }
+      return prev.filter((item) => item.id !== id);
+    });
+  };
+
   const submit = async (streamingBehavior?: "followUp" | "steer") => {
     if (!canSend) return;
     const sessionAtSend = activeSessionId;
+    const imagePayload = attachments.map((item) => ({
+      dataBase64: item.dataBase64,
+      mimeType: item.mimeType,
+    }));
     setSending(true);
     try {
-      const sent = await send(message, streamingBehavior);
+      const sent = await send(
+        message,
+        streamingBehavior,
+        imagePayload.length ? imagePayload : undefined,
+      );
       if (
         sent &&
         useSessionStore.getState().activeSessionId === sessionAtSend
@@ -184,6 +264,14 @@ export const Composer = () => {
         setDraft("");
         setCursor(0);
         setSlashOpen(false);
+        setAttachments((prev) => {
+          for (const item of prev) {
+            if (item.previewUrl.startsWith("blob:")) {
+              URL.revokeObjectURL(item.previewUrl);
+            }
+          }
+          return [];
+        });
       }
     } finally {
       setSending(false);
@@ -248,6 +336,36 @@ export const Composer = () => {
     void submit(isStreaming ? "followUp" : undefined);
   };
 
+  const handlePaste = (event: ClipboardEvent<HTMLTextAreaElement>) => {
+    const items = event.clipboardData?.items;
+    const files: File[] = [];
+    if (items) {
+      for (const item of Array.from(items)) {
+        if (item.kind === "file" && item.type.startsWith("image/")) {
+          const file = item.getAsFile();
+          if (file) files.push(file);
+        }
+      }
+    }
+    if (!files.length && event.clipboardData?.files?.length) {
+      files.push(...Array.from(event.clipboardData.files));
+    }
+    const imageFiles = takeImageFiles(files, MAX_COMPOSER_IMAGES);
+    if (!imageFiles.length) return;
+    event.preventDefault();
+    void addFiles(imageFiles);
+  };
+
+  const handleDrop = (event: DragEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setDragOver(false);
+    if (!activeSessionId || sending) return;
+    const files = event.dataTransfer?.files
+      ? Array.from(event.dataTransfer.files)
+      : [];
+    void addFiles(files);
+  };
+
   const handleAbort = async () => {
     setAborting(true);
     try {
@@ -259,11 +377,54 @@ export const Composer = () => {
 
   return (
     <form
-      className="composer"
+      className={dragOver ? "composer is-dragover" : "composer"}
       aria-label="Message composer"
       onSubmit={handleSubmit}
+      onDragEnter={(event) => {
+        event.preventDefault();
+        if (activeSessionId) setDragOver(true);
+      }}
+      onDragOver={(event) => {
+        event.preventDefault();
+        if (activeSessionId) setDragOver(true);
+      }}
+      onDragLeave={(event) => {
+        if (event.currentTarget.contains(event.relatedTarget as Node)) return;
+        setDragOver(false);
+      }}
+      onDrop={handleDrop}
     >
       <label htmlFor="message">Message OMP</label>
+      {attachments.length > 0 && (
+        <ul className="composer__attachments" aria-label="Image attachments">
+          {attachments.map((item) => (
+            <li key={item.id} className="composer__attachment">
+              <img
+                src={item.previewUrl}
+                alt={item.name ?? "Attached image"}
+                className="composer__attachment-thumb"
+              />
+              <div className="composer__attachment-meta">
+                <span className="composer__attachment-name">
+                  {item.name ?? item.mimeType}
+                </span>
+                <span className="composer__attachment-size">
+                  {formatByteLen(item.byteLen)}
+                </span>
+              </div>
+              <button
+                type="button"
+                className="composer__attachment-remove"
+                aria-label={`Remove ${item.name ?? "image"}`}
+                onClick={() => removeAttachment(item.id)}
+                disabled={sending}
+              >
+                ×
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
       <div className="composer__input">
         {slashActive && filtered.length > 0 && (
           <ul
@@ -314,7 +475,7 @@ export const Composer = () => {
             activeSessionId
               ? isStreaming
                 ? "Add a follow-up or steer the current run…"
-                : "Ask OMP to work in this project…  (/ for commands)"
+                : "Ask OMP to work in this project…  (/ for commands, paste/drop images)"
               : "Open a folder to begin…"
           }
           disabled={!activeSessionId || sending}
@@ -329,16 +490,47 @@ export const Composer = () => {
           onKeyUp={() => syncCursor()}
           onSelect={() => syncCursor()}
           onKeyDown={handleKeyDown}
+          onPaste={handlePaste}
         />
       </div>
       <div className="composer__footer">
-        <span>
-          {isStreaming
-            ? "Enter follow-up · ⌘/Ctrl Enter steer · ⇧Enter newline"
-            : slashActive
-              ? "↑↓ navigate · Tab/Enter insert · Esc close"
-              : "Enter send · ⇧Enter newline · / commands"}
-        </span>
+        <div className="composer__footer-left">
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            multiple
+            hidden
+            onChange={(event) => {
+              const files = event.target.files
+                ? Array.from(event.target.files)
+                : [];
+              event.target.value = "";
+              void addFiles(files);
+            }}
+          />
+          <button
+            type="button"
+            className="composer__attach"
+            disabled={
+              !activeSessionId ||
+              sending ||
+              attachments.length >= MAX_COMPOSER_IMAGES
+            }
+            title="Attach images"
+            aria-label="Attach images"
+            onClick={() => fileInputRef.current?.click()}
+          >
+            📎
+          </button>
+          <span>
+            {isStreaming
+              ? "Enter follow-up · ⌘/Ctrl Enter steer · ⇧Enter newline"
+              : slashActive
+                ? "↑↓ navigate · Tab/Enter insert · Esc close"
+                : "Enter send · ⇧Enter newline · paste/drop images"}
+          </span>
+        </div>
         <div className="composer__actions">
           {isStreaming && (
             <button

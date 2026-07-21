@@ -1417,6 +1417,113 @@ button:disabled {
     0 1px rgba(255, 255, 255, 0.025) inset;
 }
 
+.composer.is-dragover {
+  border-color: rgba(0, 180, 255, 0.45);
+  box-shadow:
+    0 16px 44px rgba(0, 0, 0, 0.24),
+    0 0 0 1px rgba(0, 180, 255, 0.25) inset;
+}
+
+.composer__attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 0 8px;
+  padding: 0;
+  list-style: none;
+}
+
+.composer__attachment {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  min-width: 160px;
+  max-width: 240px;
+  padding: 6px 8px;
+  border: 1px solid #2f3742;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.composer__attachment-thumb {
+  width: 40px;
+  height: 40px;
+  object-fit: cover;
+  border-radius: 5px;
+  background: #12151a;
+}
+
+.composer__attachment-meta {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  gap: 2px;
+}
+
+.composer__attachment-name {
+  overflow: hidden;
+  color: #c4cad3;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.composer__attachment-size {
+  color: #6f7884;
+  font-family: "SFMono-Regular", Menlo, monospace;
+  font-size: 9px;
+}
+
+.composer__attachment-remove {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
+  color: #9aa3af;
+  background: transparent;
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.composer__attachment-remove:hover:not(:disabled) {
+  color: #e8edf3;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.composer__footer-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.composer__attach {
+  flex: 0 0 auto;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid #2f3742;
+  border-radius: 6px;
+  color: #8b93a0;
+  background: rgba(255, 255, 255, 0.02);
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.composer__attach:hover:not(:disabled) {
+  color: #d7dde6;
+  border-color: rgba(0, 180, 255, 0.28);
+}
+
+.composer__attach:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
 .composer__input {
   position: relative;
 }
@@ -1538,7 +1645,7 @@ button:disabled {
   font-size: 8px;
 }
 
-.composer__footer button {
+.composer__actions button {
   padding: 6px 13px;
   border-radius: 6px;
   color: #6c7463;
@@ -1563,7 +1670,7 @@ button:disabled {
   background: rgba(226, 109, 114, 0.09);
 }
 
-.composer__footer button:disabled {
+.composer__actions button:disabled {
   opacity: 0.48;
 }
 

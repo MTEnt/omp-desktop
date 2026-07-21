@@ -178,6 +178,7 @@ impl SessionManager {
         session_id: &str,
         message: String,
         streaming_behavior: Option<String>,
+        images: Option<Vec<Value>>,
     ) -> AppResult<Value> {
         let mut params = Map::new();
         params.insert("message".into(), Value::String(message));
@@ -186,6 +187,11 @@ impl SessionManager {
                 "streamingBehavior".into(),
                 Value::String(streaming_behavior),
             );
+        }
+        if let Some(images) = images {
+            if !images.is_empty() {
+                params.insert("images".into(), Value::Array(images));
+            }
         }
         self.rpc_command(session_id, "prompt", Value::Object(params))
             .await
@@ -518,7 +524,7 @@ process.stdin.resume();
             .any(|args| args == ["--resume", "previous-session"]));
 
         let prompt = manager
-            .prompt(&info.id, "hello".into(), Some("followUp".into()))
+            .prompt(&info.id, "hello".into(), Some("followUp".into()), None)
             .await
             .unwrap();
         assert_eq!(prompt["command"], "prompt");

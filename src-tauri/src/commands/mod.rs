@@ -1,4 +1,5 @@
 use crate::error::AppError;
+use crate::image_attach::{images_to_rpc_value, prepare_from_raw_inputs, PreparedImage, RawImageInput};
 use crate::memory::{self, JobCard, MemoryStore, PersistentAgent, RoleMemoryNote, RoleScratchpad};
 use crate::omp_config::{self, AvailableModel, ModelRolesSnapshot};
 use crate::pty::{PtyManager, PtyOutput};
@@ -689,13 +690,47 @@ pub async fn prompt(
     session_id: String,
     message: String,
     streaming_behavior: Option<String>,
+    images: Option<Vec<RawImageInput>>,
 ) -> Result<Value, AppError> {
+    let rpc_images = if let Some(inputs) = images {
+        if inputs.is_empty() {
+            None
+        } else {
+            let prepared = prepare_from_raw_inputs(&inputs)?;
+            let value = images_to_rpc_value(&prepared);
+            match value {
+                Value::Array(items) => Some(items),
+                _ => None,
+            }
+        }
+    } else {
+        None
+    };
+
     state
         .sessions
         .lock()
         .await
-        .prompt(&session_id, message, streaming_behavior)
+        .prompt(&session_id, message, streaming_behavior, rpc_images)
         .await
+}
+
+/// Decode / compress browser-supplied images under the RPC frame budget.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn prepare_prompt_images(
+    images_base64: Vec<String>,
+) -> Result<Vec<PreparedImage>, AppError> {
+    let inputs: Vec<RawImageInput> = images_base64
+        .into_iter()
+        .map(|data_base64| RawImageInput {
+            data_base64,
+            mime_type: None,
+        })
+        .collect();
+    if inputs.is_empty() {
+        return Err(AppError::from("at least one image is required"));
+    }
+    prepare_from_raw_inputs(&inputs)
 }
 
 #[tauri::command(rename_all = "camelCase")]

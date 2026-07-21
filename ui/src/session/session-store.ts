@@ -109,7 +109,11 @@ export interface SessionStore {
     sessionId: string,
     input: { subagentId?: string; sessionFile?: string; fromByte?: number },
   ) => Promise<unknown>;
-  send: (message: string, streamingBehavior?: string) => Promise<boolean>;
+  send: (
+    message: string,
+    streamingBehavior?: string,
+    images?: Array<string | { dataBase64: string; mimeType?: string | null }>,
+  ) => Promise<boolean>;
   abort: () => Promise<void>;
   applyOmpEvent: (sessionId: string, event: unknown) => void;
   respondExtensionUi: (
@@ -1303,10 +1307,17 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
     return api.getSubagentMessages(sessionId, input);
   },
 
-  send: async (message, streamingBehavior) => {
+  send: async (message, streamingBehavior, images) => {
     const sessionId = get().activeSessionId;
     const text = message.trim();
-    if (!sessionId || !text) return false;
+    const imagePayload = images?.length ? images : undefined;
+    if (!sessionId || (!text && !imagePayload)) return false;
+
+    const transcriptText =
+      text ||
+      (imagePayload
+        ? `[${imagePayload.length} image${imagePayload.length === 1 ? "" : "s"}]`
+        : "");
 
     set((state) => {
       const current = state.transcripts[sessionId] ?? [];
@@ -1315,7 +1326,7 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
           ...state.transcripts,
           [sessionId]: [
             ...current,
-            { id: nextItemId(current, "user"), kind: "user", text },
+            { id: nextItemId(current, "user"), kind: "user", text: transcriptText },
           ],
         },
       };
@@ -1334,7 +1345,12 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
           void get().ensureRoleMemoryPreamble("default", sessionId);
         }
       }
-      await api.prompt(sessionId, `${preamble}${text}`, streamingBehavior);
+      await api.prompt(
+        sessionId,
+        `${preamble}${text}`,
+        streamingBehavior,
+        imagePayload,
+      );
       return true;
     } catch (error) {
       set((state) => {

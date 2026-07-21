@@ -34,3 +34,6 @@ which = "7"
 portable-pty = "0.9"
 serde_yaml = "0.9"
 rusqlite = { version = "0.32", features = ["bundled"] }
+base64 = "0.22"
+image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp"] }
+

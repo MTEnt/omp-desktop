@@ -122,12 +122,36 @@ export const api = {
 
   closePty: (sessionId: string) => invoke<void>("close_pty", { sessionId }),
 
-  prompt: (sessionId: string, message: string, streamingBehavior?: string) =>
+  prompt: (
+    sessionId: string,
+    message: string,
+    streamingBehavior?: string,
+    images?: Array<string | { dataBase64: string; mimeType?: string | null }>,
+  ) =>
     invoke<unknown>("prompt", {
       sessionId,
       message,
       streamingBehavior: streamingBehavior ?? null,
+      images: (images ?? []).map((item) =>
+        typeof item === "string"
+          ? { dataBase64: item, mimeType: null }
+          : {
+              dataBase64: item.dataBase64,
+              mimeType: item.mimeType ?? null,
+            },
+      ),
     }),
+
+  preparePromptImages: (imagesBase64: string[]) =>
+    invoke<
+      Array<{
+        mimeType: string;
+        dataBase64: string;
+        byteLen: number;
+        width: number;
+        height: number;
+      }>
+    >("prepare_prompt_images", { imagesBase64 }),
 
   abort: (sessionId: string) => invoke<unknown>("abort", { sessionId }),
 

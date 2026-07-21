@@ -1,6 +1,7 @@
 mod commands;
 mod error;
 mod memory;
+mod image_attach;
 mod omp_config;
 mod omp_context;
 mod pty;
@@ -69,6 +70,7 @@ pub fn run() {
             commands::resize_pty,
             commands::close_pty,
             commands::prompt,
+            commands::prepare_prompt_images,
             commands::abort,
             commands::get_state,
             commands::rpc_command,
