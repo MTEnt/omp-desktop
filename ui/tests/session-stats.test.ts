@@ -4,8 +4,12 @@ import { describe, it } from "node:test";
 import {
   computeTps,
   formatCostChip,
+  formatLastTurnMs,
   formatTokenChip,
+  formatTokenCount,
   formatTpsChip,
+  formatUsd,
+  hasTurnStats,
   mergeTurnStats,
   parseSessionStats,
 } from "../src/session/session-stats.ts";
@@ -128,5 +132,33 @@ describe("turn stats helpers", () => {
     assert.equal(formatTpsChip(32.4), "~32.4 t/s");
     assert.equal(formatCostChip(0.02), "$0.02");
     assert.equal(formatCostChip(null), null);
+    assert.equal(formatUsd(0.0042), "$0.004");
+    assert.equal(formatUsd(1.25), "$1.25");
+    assert.equal(formatTokenCount(12400), "12.4k");
+    assert.equal(formatLastTurnMs(2500), "2.5s");
+    assert.equal(formatLastTurnMs(250), "250 ms");
+    assert.equal(formatLastTurnMs(null), null);
+    assert.equal(
+      hasTurnStats({
+        inputTokens: null,
+        outputTokens: null,
+        totalTokens: null,
+        costUsd: null,
+        tps: null,
+        lastTurnMs: null,
+      }),
+      false,
+    );
+    assert.equal(
+      hasTurnStats({
+        inputTokens: 10,
+        outputTokens: null,
+        totalTokens: null,
+        costUsd: null,
+        tps: null,
+        lastTurnMs: null,
+      }),
+      true,
+    );
   });
 });

@@ -2591,6 +2591,68 @@ button:disabled {
   font-size: 8px;
 }
 
+
+.settings-usage {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-top: 4px;
+  border-top: 1px solid var(--line-soft);
+}
+
+.settings-usage__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.settings-usage__header h3 {
+  margin: 0;
+  color: #cbd1d9;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.settings-usage__header p {
+  margin: 4px 0 0;
+  color: #747d89;
+  font-size: 9px;
+  line-height: 1.4;
+}
+
+.settings-usage__grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 7px;
+  margin: 0;
+}
+
+.settings-usage__item {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  padding: 8px 9px;
+  border: 1px solid var(--line-soft);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.015);
+}
+
+.settings-usage__item dt {
+  color: #747d89;
+  font-size: 8px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.settings-usage__item dd {
+  margin: 0;
+  color: #cbd1d9;
+  font-family: "SFMono-Regular", Menlo, monospace;
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
 .settings-providers {
   display: flex;
   flex-direction: column;

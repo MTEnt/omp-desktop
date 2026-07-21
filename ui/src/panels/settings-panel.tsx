@@ -5,7 +5,17 @@ import {
   normalizeLoginProviders,
   type LoginProvider,
 } from "../session/providers.ts";
-import { useSessionStore } from "../session/session-store.ts";
+import {
+  formatLastTurnMs,
+  formatTokenCount,
+  formatTpsChip,
+  formatUsd,
+  hasTurnStats,
+} from "../session/session-stats.ts";
+import {
+  selectActiveTurnStats,
+  useSessionStore,
+} from "../session/session-store.ts";
 import type { AppSettings, ApprovalMode } from "../session/types.ts";
 
 const defaultSettings: AppSettings = {
@@ -25,6 +35,11 @@ export const SettingsPanel = () => {
   const loadSettings = useSessionStore((state) => state.loadSettings);
   const saveSettings = useSessionStore((state) => state.saveSettings);
   const activeSessionId = useSessionStore((state) => state.activeSessionId);
+  const turnStats = useSessionStore(selectActiveTurnStats);
+  const refreshSessionStats = useSessionStore(
+    (state) => state.refreshSessionStats,
+  );
+  const [usageRefreshing, setUsageRefreshing] = useState(false);
   const [form, setForm] = useState<AppSettings>(settings ?? defaultSettings);
   const [saveState, setSaveState] = useState<
     "idle" | "saving" | "saved" | "error"
@@ -103,6 +118,18 @@ export const SettingsPanel = () => {
       setSigningInId(null);
     }
   };
+
+  const refreshUsage = async () => {
+    if (!activeSessionId) return;
+    setUsageRefreshing(true);
+    try {
+      await refreshSessionStats(activeSessionId);
+    } finally {
+      setUsageRefreshing(false);
+    }
+  };
+
+  const usageReady = hasTurnStats(turnStats);
 
   return (
     <form className="settings-form" onSubmit={(event) => void submit(event)}>
@@ -197,6 +224,72 @@ export const SettingsPanel = () => {
           <option value="light">Light</option>
         </select>
       </label>
+
+      {activeSessionId ? (
+        <section className="settings-usage" aria-label="Session usage">
+          <div className="settings-usage__header">
+            <div>
+              <h3>Usage</h3>
+              <p>Host-reported tokens, cost, and last-turn throughput.</p>
+            </div>
+            <button
+              type="button"
+              className="panel-button"
+              disabled={usageRefreshing}
+              onClick={() => void refreshUsage()}
+            >
+              {usageRefreshing ? "Refreshing…" : "Refresh"}
+            </button>
+          </div>
+
+          {!usageReady ? (
+            <p className="panel-feedback">Usage appears after a turn completes</p>
+          ) : (
+            <dl className="settings-usage__grid">
+              <div className="settings-usage__item">
+                <dt>Input</dt>
+                <dd>
+                  {turnStats.inputTokens !== null
+                    ? formatTokenCount(turnStats.inputTokens)
+                    : "—"}
+                </dd>
+              </div>
+              <div className="settings-usage__item">
+                <dt>Output</dt>
+                <dd>
+                  {turnStats.outputTokens !== null
+                    ? formatTokenCount(turnStats.outputTokens)
+                    : "—"}
+                </dd>
+              </div>
+              <div className="settings-usage__item">
+                <dt>Total</dt>
+                <dd>
+                  {turnStats.totalTokens !== null
+                    ? formatTokenCount(turnStats.totalTokens)
+                    : "—"}
+                </dd>
+              </div>
+              <div className="settings-usage__item">
+                <dt>Cost</dt>
+                <dd>
+                  {turnStats.costUsd !== null && Number.isFinite(turnStats.costUsd)
+                    ? formatUsd(turnStats.costUsd)
+                    : "—"}
+                </dd>
+              </div>
+              <div className="settings-usage__item">
+                <dt>Throughput</dt>
+                <dd>{formatTpsChip(turnStats.tps) ?? "—"}</dd>
+              </div>
+              <div className="settings-usage__item">
+                <dt>Last turn</dt>
+                <dd>{formatLastTurnMs(turnStats.lastTurnMs) ?? "—"}</dd>
+              </div>
+            </dl>
+          )}
+        </section>
+      ) : null}
 
       <section className="settings-providers" aria-label="Provider login">
         <div className="settings-providers__header">

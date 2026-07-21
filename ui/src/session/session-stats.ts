@@ -155,13 +155,35 @@ export const formatTpsChip = (tps: number | null): string | null => {
   return `~${rounded} t/s`;
 };
 
-export const formatCostChip = (costUsd: number | null): string | null => {
-  if (costUsd === null || !Number.isFinite(costUsd) || costUsd < 0) return null;
+export const formatUsd = (costUsd: number): string => {
+  if (!Number.isFinite(costUsd) || costUsd < 0) return "—";
   if (costUsd === 0) return "$0";
   if (costUsd < 0.01) return `$${costUsd.toFixed(3)}`;
-  if (costUsd < 10) return `$${costUsd.toFixed(2)}`;
   return `$${costUsd.toFixed(2)}`;
 };
+
+export const formatCostChip = (costUsd: number | null): string | null => {
+  if (costUsd === null || !Number.isFinite(costUsd) || costUsd < 0) return null;
+  return formatUsd(costUsd);
+};
+
+export const formatLastTurnMs = (lastTurnMs: number | null): string | null => {
+  if (lastTurnMs === null || !Number.isFinite(lastTurnMs) || lastTurnMs < 0) {
+    return null;
+  }
+  if (lastTurnMs < 1000) return `${Math.round(lastTurnMs)} ms`;
+  const seconds = lastTurnMs / 1000;
+  if (seconds < 10) return `${seconds.toFixed(1)}s`;
+  return `${Math.round(seconds)}s`;
+};
+
+export const hasTurnStats = (stats: SessionTurnStats): boolean =>
+  stats.inputTokens !== null ||
+  stats.outputTokens !== null ||
+  stats.totalTokens !== null ||
+  (stats.costUsd !== null && Number.isFinite(stats.costUsd)) ||
+  (stats.tps !== null && Number.isFinite(stats.tps) && stats.tps > 0) ||
+  (stats.lastTurnMs !== null && Number.isFinite(stats.lastTurnMs));
 
 export const formatTurnStatsTitle = (stats: SessionTurnStats): string => {
   const parts: string[] = [];
