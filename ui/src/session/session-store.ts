@@ -1045,9 +1045,7 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
 
   loadSubagents: async (sessionId) => {
     try {
-      await api.rpcCommand(sessionId, "set_subagent_subscription", {
-        level: "progress",
-      });
+      await api.setSubagentSubscription(sessionId, "progress");
       const response = await api.rpcCommand(sessionId, "get_subagents");
       if (!get().sessions.some((session) => session.id === sessionId)) return;
       set((state) => ({

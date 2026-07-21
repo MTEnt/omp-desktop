@@ -527,8 +527,13 @@ describe("session commands", () => {
   });
 
   it("subscribes to progress before loading subagents", async () => {
+    const originalSetSubagentSubscription = api.setSubagentSubscription;
     const originalRpcCommand = api.rpcCommand;
     const commands: string[] = [];
+    api.setSubagentSubscription = async (_sessionId, level) => {
+      commands.push(`set_subagent_subscription:${level}`);
+      return {};
+    };
     api.rpcCommand = async (_sessionId, command) => {
       commands.push(command);
       return command === "get_subagents"
@@ -552,11 +557,12 @@ describe("session commands", () => {
     try {
       await useSessionStore.getState().loadSubagents("session-1");
     } finally {
+      api.setSubagentSubscription = originalSetSubagentSubscription;
       api.rpcCommand = originalRpcCommand;
     }
 
     assert.deepEqual(commands, [
-      "set_subagent_subscription",
+      "set_subagent_subscription:progress",
       "get_subagents",
     ]);
     assert.deepEqual(useSessionStore.getState().subagents["session-1"], [
@@ -903,5 +909,18 @@ describe("session commands", () => {
         text: "Unable to send message: rpc unavailable",
       },
     ]);
+  });
+});
+
+describe("typed rpc helpers", () => {
+  it("exposes stock rpc_command helpers on api", () => {
+    assert.equal(typeof api.getAvailableCommands, "function");
+    assert.equal(typeof api.getSessionStats, "function");
+    assert.equal(typeof api.compactSession, "function");
+    assert.equal(typeof api.exportSessionHtml, "function");
+    assert.equal(typeof api.setSubagentSubscription, "function");
+    assert.equal(typeof api.getSubagentMessages, "function");
+    assert.equal(typeof api.getLoginProviders, "function");
+    assert.equal(typeof api.loginProvider, "function");
   });
 });

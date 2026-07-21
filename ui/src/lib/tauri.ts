@@ -137,6 +137,72 @@ export const api = {
     params: Record<string, unknown> = {},
   ) => invoke<unknown>("rpc_command", { sessionId, command, params }),
 
+  getAvailableCommands: (sessionId: string) =>
+    invoke<unknown>("rpc_command", {
+      sessionId,
+      command: "get_available_commands",
+      params: {},
+    }),
+
+  getSessionStats: (sessionId: string) =>
+    invoke<unknown>("rpc_command", {
+      sessionId,
+      command: "get_session_stats",
+      params: {},
+    }),
+
+  compactSession: (sessionId: string, customInstructions?: string) =>
+    invoke<unknown>("rpc_command", {
+      sessionId,
+      command: "compact",
+      params: customInstructions ? { customInstructions } : {},
+    }),
+
+  exportSessionHtml: (sessionId: string, outputPath?: string) =>
+    invoke<unknown>("rpc_command", {
+      sessionId,
+      command: "export_html",
+      params: outputPath ? { outputPath } : {},
+    }),
+
+  setSubagentSubscription: (
+    sessionId: string,
+    level: "off" | "progress" | "events",
+  ) =>
+    invoke<unknown>("rpc_command", {
+      sessionId,
+      command: "set_subagent_subscription",
+      params: { level },
+    }),
+
+  getSubagentMessages: (
+    sessionId: string,
+    params: {
+      subagentId?: string;
+      sessionFile?: string;
+      fromByte?: number;
+    } = {},
+  ) =>
+    invoke<unknown>("rpc_command", {
+      sessionId,
+      command: "get_subagent_messages",
+      params,
+    }),
+
+  getLoginProviders: (sessionId: string) =>
+    invoke<unknown>("rpc_command", {
+      sessionId,
+      command: "get_login_providers",
+      params: {},
+    }),
+
+  loginProvider: (sessionId: string, providerId: string) =>
+    invoke<unknown>("rpc_command", {
+      sessionId,
+      command: "login",
+      params: { providerId },
+    }),
+
   respondExtensionUi: (
     sessionId: string,
     requestId: string,
