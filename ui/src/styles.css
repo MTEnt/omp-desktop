@@ -1918,6 +1918,159 @@ button:disabled {
   line-height: 1.45;
 }
 
+.subagent-row--button {
+  display: block;
+  width: 100%;
+  margin: 0;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.subagent-row--button:hover {
+  border-color: #4a5540;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.subagent-row__branch {
+  margin-right: 4px;
+  color: #5d6672;
+  font-family: "SFMono-Regular", Menlo, monospace;
+  font-weight: 400;
+}
+
+.subagent-row__agent {
+  margin-left: 6px;
+  color: #68717d;
+  font-size: 8px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.subagent-inspector {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 0;
+}
+
+.subagent-inspector__header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.subagent-inspector__title {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
+.subagent-inspector__title strong {
+  overflow: hidden;
+  color: #cbd1d9;
+  font-size: 11px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.subagent-inspector__meta {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 10px 11px;
+  border: 1px solid var(--line-soft);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.015);
+}
+
+.subagent-inspector__meta-row {
+  display: grid;
+  grid-template-columns: 88px minmax(0, 1fr);
+  gap: 8px;
+  align-items: baseline;
+}
+
+.subagent-inspector__meta-row dt {
+  color: #5d6672;
+  font-size: 8px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.subagent-inspector__meta-row dd {
+  margin: 0;
+  overflow: hidden;
+  color: #9aa3ae;
+  font-size: 10px;
+  line-height: 1.4;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.subagent-inspector__messages {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.subagent-inspector__message-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.subagent-inspector__message-list li {
+  padding: 10px 11px;
+  border: 1px solid var(--line-soft);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.015);
+}
+
+.subagent-inspector__role {
+  display: block;
+  margin-bottom: 6px;
+  color: #5d6672;
+  font-family: "SFMono-Regular", Menlo, monospace;
+  font-size: 8px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.subagent-inspector__message-list p {
+  margin: 0;
+  color: #9aa3ae;
+  font-size: 10px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.subagent-inspector__raw {
+  margin: 0;
+  padding: 11px;
+  overflow: auto;
+  border: 1px solid var(--line-soft);
+  border-radius: 7px;
+  color: #9aa3ae;
+  background: rgba(255, 255, 255, 0.015);
+  font-family: "SFMono-Regular", Menlo, monospace;
+  font-size: 9px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 .settings-form {
   display: flex;
   flex-direction: column;
