@@ -25,7 +25,7 @@ jobs:
           - name: Linux x64
             os: ubuntu-22.04
             rust-targets: x86_64-unknown-linux-gnu
-            tauri-args: --bundles deb,appimage
+            tauri-args: --bundles deb,rpm,appimage
 
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
@@ -59,10 +59,14 @@ jobs:
           sudo apt-get install -y \
             libwebkit2gtk-4.1-dev \
             libappindicator3-dev \
+            libayatana-appindicator3-dev \
+            libxdo-dev \
+            libssl-dev \
             librsvg2-dev \
             patchelf \
             libgtk-3-dev \
-            libsoup-3.0-dev
+            libsoup-3.0-dev \
+            rpm
 
       - name: Install root dependencies
         run: npm ci --ignore-scripts
@@ -85,6 +89,8 @@ jobs:
           releaseBody: |
             Desktop build for stock OMP 17+.
             See README for install requirements.
+
+            **Linux artifacts:** `.deb`, `.rpm`, and `.AppImage` (plus the portable binary from CI artifacts on push builds).
 
             **Note:** macOS builds are unsigned until notarization secrets are configured.
             On first open, use System Settings → Privacy & Security → Open Anyway if Gatekeeper blocks the app.
