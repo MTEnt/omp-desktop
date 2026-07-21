@@ -1,11 +1,12 @@
 # OMP Desktop
 
-Cross-platform desktop cockpit (macOS + Windows) for [OMP](https://github.com/) (`omp` CLI) coding-agent sessions.
+Cross-platform desktop cockpit (Linux + macOS + Windows) for [OMP](https://github.com/) (`omp` CLI) coding-agent sessions.
 
 Zen-default UI with expandable panels, multi-tab `omp --mode rpc` sessions, live transcript, plan/activity/subagents, settings, command palette, and an app-owned PTY terminal.
 
 ## Requirements
 
+- Linux x86_64 with WebKitGTK 4.1
 - macOS 12+ (Apple Silicon or Intel)
 - Windows 10/11 x64 (WebView2)
 - Rust toolchain (`rustc` / `cargo`)
@@ -54,6 +55,28 @@ On first launch, OMP Desktop opens a short setup:
 
 Replay anytime from **Settings → Replay first-launch walkthrough**.
 
+
+## Launch on Linux
+
+Install the [Tauri 2 Linux system dependencies](https://v2.tauri.app/start/prerequisites/#linux), then run:
+
+```bash
+npm run launch:linux
+# same as: npm run dev
+```
+
+Build native Debian, RPM, and AppImage packages:
+
+```bash
+npm run build:linux
+```
+
+Outputs:
+
+- `src-tauri/target/release/bundle/deb/*.deb`
+- `src-tauri/target/release/bundle/rpm/*.rpm`
+- `src-tauri/target/release/bundle/appimage/*.AppImage`
+- `src-tauri/target/release/app` portable binary
 
 ## Launch on Windows
 

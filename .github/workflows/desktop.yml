@@ -26,6 +26,11 @@ jobs:
             rust-targets: x86_64-pc-windows-msvc
             tauri-args: --bundles nsis
             artifact-name: omp-desktop-windows-x64
+          - name: Linux x64
+            os: ubuntu-22.04
+            rust-targets: x86_64-unknown-linux-gnu
+            tauri-args: --bundles deb,rpm,appimage
+            artifact-name: omp-desktop-linux-x64
 
     runs-on: ${{ matrix.os }}
     timeout-minutes: 45
@@ -52,6 +57,19 @@ jobs:
           workspaces: src-tauri
           shared-key: ${{ matrix.artifact-name }}
 
+      - name: Install Linux system dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes \
+            libwebkit2gtk-4.1-dev \
+            libxdo-dev \
+            libssl-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            rpm
+
       - name: Install root dependencies
         run: npm ci --ignore-scripts
 
@@ -67,6 +85,18 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           args: ${{ matrix.tauri-args }}
+
+      - name: Upload Linux installers and portable executable
+        if: runner.os == 'Linux'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact-name }}
+          path: |
+            src-tauri/target/release/bundle/appimage/*.AppImage
+            src-tauri/target/release/bundle/deb/*.deb
+            src-tauri/target/release/bundle/rpm/*.rpm
+            src-tauri/target/release/app
+          if-no-files-found: error
 
       - name: Upload macOS installer
         if: runner.os == 'macOS'
