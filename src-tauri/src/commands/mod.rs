@@ -78,14 +78,21 @@ pub async fn list_available_models(
     let settings = state.settings.lock().await.clone();
     let omp_bin = settings::resolve_omp_binary(&settings).unwrap_or_else(|_| PathBuf::from("omp"));
     settings::require_supported_omp_runtime(&omp_bin).await?;
-    let cwd = std::env::temp_dir();
-    let args = vec![
-        "--mode".into(),
-        "rpc".into(),
-        "--cwd".into(),
-        cwd.display().to_string(),
-        "--no-session".into(),
-    ];
+
+    let sessions = state.sessions.lock().await;
+    let (cwd, profile) = if let Some(session) = sessions.list().into_iter().next() {
+        (session.cwd, session.profile)
+    } else {
+        (std::env::temp_dir(), settings.default_profile.clone())
+    };
+    drop(sessions);
+
+    let ctx = crate::omp_context::OmpProcessContext {
+        cwd,
+        profile,
+        omp_bin: omp_bin.clone(),
+    };
+    let args = ctx.base_rpc_args(true);
     let client = RpcClient::spawn(&omp_bin, &args).await?;
     client.wait_ready(Duration::from_secs(30)).await?;
     let response = client

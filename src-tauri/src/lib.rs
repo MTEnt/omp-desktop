@@ -2,6 +2,7 @@ mod commands;
 mod error;
 mod memory;
 mod omp_config;
+mod omp_context;
 mod pty;
 mod rpc;
 mod session;
