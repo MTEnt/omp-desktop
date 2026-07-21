@@ -1,6 +1,6 @@
 # OMP Desktop
 
-Cross-platform desktop cockpit (macOS + Windows) for [OMP](https://github.com/) (`omp` CLI) coding-agent sessions.
+Cross-platform desktop cockpit (macOS + Windows + Linux) for [OMP](https://github.com/) (`omp` CLI) coding-agent sessions.
 
 Zen-default UI with expandable panels, multi-tab `omp --mode rpc` sessions, live transcript, plan/activity/subagents, settings, command palette, and an app-owned PTY terminal.
 
@@ -8,10 +8,27 @@ Zen-default UI with expandable panels, multi-tab `omp --mode rpc` sessions, live
 
 - macOS 12+ (Apple Silicon or Intel)
 - Windows 10/11 x64 (WebView2)
+- Linux x64 (Debian/Ubuntu-class; WebKitGTK 4.1)
 - Rust toolchain (`rustc` / `cargo`)
 - Node.js 22.12+ and npm
 - [Tauri 2 system dependencies](https://v2.tauri.app/start/prerequisites/)
 - `omp` on PATH (v17+), or set the binary path in Settings
+
+## Install from Releases
+
+Prebuilt installers are published on [GitHub Releases](https://github.com/MTEnt/omp-desktop/releases) for tags matching `v*` (for example `v0.1.0`).
+
+| Platform | Artifacts |
+| --- | --- |
+| macOS | Universal `.dmg` |
+| Windows | NSIS `.exe` installer |
+| Linux | `.deb` and `.AppImage` |
+
+**macOS (unsigned):** builds are not Apple-notarized yet. After download, if Gatekeeper blocks the app, open **System Settings → Privacy & Security** and choose **Open Anyway**, or run `xattr -dr com.apple.quarantine "/path/to/OMP Desktop.app"`. Notarization secrets are not required for CI.
+
+**Linux:** install WebKitGTK and related runtime packages if the AppImage or `.deb` reports missing libraries — on Debian/Ubuntu typically `libwebkit2gtk-4.1-0`, `libgtk-3-0`, and `libayatana-appindicator3-1` (package names vary by distro). Prefer the `.deb` on Ubuntu 22.04+.
+
+You still need `omp` v17+ on PATH (or set the binary path in Settings) after installing the desktop app.
 
 ## Screenshots
 

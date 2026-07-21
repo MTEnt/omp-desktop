@@ -1,16 +1,14 @@
-name: Desktop
+name: Release
 
 on:
   push:
-    branches: [main]
-  pull_request:
-  workflow_dispatch:
+    tags: ['v*']
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
-  build:
+  release:
     name: ${{ matrix.name }}
     strategy:
       fail-fast: false
@@ -20,20 +18,17 @@ jobs:
             os: macos-latest
             rust-targets: aarch64-apple-darwin,x86_64-apple-darwin
             tauri-args: --target universal-apple-darwin
-            artifact-name: omp-desktop-macos-universal
           - name: Windows x64
             os: windows-latest
             rust-targets: x86_64-pc-windows-msvc
             tauri-args: --bundles nsis
-            artifact-name: omp-desktop-windows-x64
           - name: Linux x64
             os: ubuntu-22.04
             rust-targets: x86_64-unknown-linux-gnu
             tauri-args: --bundles deb,appimage
-            artifact-name: omp-desktop-linux-x64
 
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 45
+    timeout-minutes: 60
 
     steps:
       - uses: actions/checkout@v5
@@ -55,7 +50,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
-          shared-key: ${{ matrix.artifact-name }}
+          shared-key: release-${{ matrix.os }}
 
       - name: Install Linux dependencies
         if: runner.os == 'Linux'
@@ -78,37 +73,21 @@ jobs:
       - name: Verify contracts
         run: npm test && npm run lint
 
-      - name: Build desktop bundle
+      # Unsigned releases are intentional until Apple notarization secrets are configured.
+      # Do not require APPLE_* signing env vars.
+      - name: Build and upload release assets
         uses: tauri-apps/tauri-action@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
+          tagName: ${{ github.ref_name }}
+          releaseName: OMP Desktop ${{ github.ref_name }}
+          releaseBody: |
+            Desktop build for stock OMP 17+.
+            See README for install requirements.
+
+            **Note:** macOS builds are unsigned until notarization secrets are configured.
+            On first open, use System Settings → Privacy & Security → Open Anyway if Gatekeeper blocks the app.
+          releaseDraft: false
+          prerelease: false
           args: ${{ matrix.tauri-args }}
-
-      - name: Upload macOS installer
-        if: runner.os == 'macOS'
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ matrix.artifact-name }}
-          path: src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg
-          if-no-files-found: error
-
-      - name: Upload Windows installer and portable executable
-        if: runner.os == 'Windows'
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ matrix.artifact-name }}
-          path: |
-            src-tauri/target/release/bundle/nsis/*.exe
-            src-tauri/target/release/app.exe
-          if-no-files-found: error
-
-      - name: Upload Linux deb and AppImage
-        if: runner.os == 'Linux'
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ matrix.artifact-name }}
-          path: |
-            src-tauri/target/release/bundle/deb/*.deb
-            src-tauri/target/release/bundle/appimage/*.AppImage
-          if-no-files-found: error
