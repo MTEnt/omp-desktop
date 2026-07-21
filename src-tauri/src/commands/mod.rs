@@ -1,6 +1,8 @@
+use crate::auth_broker::{self, LoginProvider};
 use crate::error::AppError;
 use crate::memory::{self, JobCard, MemoryStore, PersistentAgent, RoleMemoryNote, RoleScratchpad};
 use crate::omp_config::{self, AvailableModel, ModelRolesSnapshot};
+use crate::provider_keys::{self, ProviderKeyStatus, ProviderKeyUpdate};
 use crate::pty::{PtyManager, PtyOutput};
 use crate::session::{SessionInfo, SessionManager};
 use crate::session_history;
@@ -52,6 +54,74 @@ struct SessionEventEnvelope {
     event: Value,
 }
 
+/// Strip heavy nested fields before crossing the Tauri IPC boundary.
+/// OMP `message_update` / `agent_end` frames embed full `partial` trees and
+/// thinking signatures; those payloads can fail to emit and leave the UI stuck
+/// on "Working…" after a successful `agent_start`.
+fn slim_omp_event(mut event: Value) -> Value {
+    let Some(root) = event.as_object_mut() else {
+        return event;
+    };
+
+    if let Some(assistant) = root
+        .get_mut("assistantMessageEvent")
+        .and_then(Value::as_object_mut)
+    {
+        assistant.remove("partial");
+    }
+
+    if let Some(message) = root.get_mut("message").and_then(Value::as_object_mut) {
+        slim_message_object(message);
+    }
+
+    if root.get("type").and_then(Value::as_str) == Some("agent_end") {
+        if let Some(messages) = root.get_mut("messages").and_then(Value::as_array_mut) {
+            for message in messages.iter_mut() {
+                if let Some(object) = message.as_object_mut() {
+                    slim_message_object(object);
+                }
+            }
+        }
+    }
+
+    event
+}
+
+fn slim_message_object(message: &mut serde_json::Map<String, Value>) {
+    if let Some(content) = message.get_mut("content").and_then(Value::as_array_mut) {
+        for block in content.iter_mut() {
+            if let Some(object) = block.as_object_mut() {
+                object.remove("thinkingSignature");
+            }
+        }
+    }
+    for key in [
+        "usage",
+        "compat",
+        "compatConfig",
+        "cost",
+        "cttl",
+        "stopReason",
+        "duration",
+        "ttft",
+    ] {
+        message.remove(key);
+    }
+}
+
+fn emit_omp_event(app: &AppHandle, session_id: &str, event: Value) {
+    let slim = slim_omp_event(event);
+    if let Err(error) = app.emit(
+        "omp-event",
+        SessionEventEnvelope {
+            session_id: session_id.to_owned(),
+            event: slim,
+        },
+    ) {
+        log::warn!("failed to emit omp-event for {session_id}: {error}");
+    }
+}
+
 #[tauri::command(rename_all = "camelCase")]
 pub async fn get_model_roles(cwd: Option<String>) -> Result<ModelRolesSnapshot, AppError> {
     omp_config::load_model_roles_for(cwd.as_deref().map(Path::new))
@@ -97,6 +167,46 @@ pub async fn list_available_models(
 #[tauri::command(rename_all = "camelCase")]
 pub async fn get_settings(state: State<'_, AppState>) -> Result<AppSettings, AppError> {
     Ok(state.settings.lock().await.clone())
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub async fn get_provider_keys() -> Result<Vec<ProviderKeyStatus>, AppError> {
+    let path = provider_keys::agent_env_path()?;
+    provider_keys::list_provider_keys(&path)
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub async fn save_provider_keys(
+    updates: Vec<ProviderKeyUpdate>,
+) -> Result<Vec<ProviderKeyStatus>, AppError> {
+    let path = provider_keys::agent_env_path()?;
+    provider_keys::save_provider_keys(&path, &updates)
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub async fn list_login_providers(
+    state: State<'_, AppState>,
+) -> Result<Vec<LoginProvider>, AppError> {
+    let settings = state.settings.lock().await.clone();
+    auth_broker::list_login_providers(&settings).await
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub async fn login_provider(
+    state: State<'_, AppState>,
+    provider_id: String,
+) -> Result<(), AppError> {
+    let settings = state.settings.lock().await.clone();
+    auth_broker::login_provider(&settings, &provider_id).await
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub async fn logout_provider(
+    state: State<'_, AppState>,
+    provider_id: String,
+) -> Result<(), AppError> {
+    let settings = state.settings.lock().await.clone();
+    auth_broker::logout_provider(&settings, &provider_id).await
 }
 
 #[tauri::command(rename_all = "camelCase")]
@@ -474,13 +584,7 @@ pub async fn create_session(
     let session_id = info.id.clone();
     tauri::async_runtime::spawn(async move {
         while let Some(event) = events.recv().await {
-            let _ = event_app.emit(
-                "omp-event",
-                SessionEventEnvelope {
-                    session_id: session_id.clone(),
-                    event,
-                },
-            );
+            emit_omp_event(&event_app, &session_id, event);
         }
         event_app
             .state::<AppState>()
@@ -600,13 +704,7 @@ pub async fn create_ssh_session(
     let session_id = info.id.clone();
     tokio::spawn(async move {
         while let Some(event) = events.recv().await {
-            let _ = app_handle.emit(
-                "omp-event",
-                SessionEventEnvelope {
-                    session_id: session_id.clone(),
-                    event,
-                },
-            );
+            emit_omp_event(&app_handle, &session_id, event);
         }
         app_handle
             .state::<AppState>()
@@ -675,18 +773,45 @@ pub async fn close_pty(state: State<'_, AppState>, session_id: String) -> Result
     state.ptys.lock().await.close_pty(&session_id)
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PromptImage {
+    #[serde(rename = "type")]
+    pub kind: String,
+    pub data: String,
+    pub mime_type: String,
+    pub detail: Option<String>,
+}
+
 #[tauri::command(rename_all = "camelCase")]
 pub async fn prompt(
     state: State<'_, AppState>,
     session_id: String,
     message: String,
     streaming_behavior: Option<String>,
+    images: Option<Vec<PromptImage>>,
 ) -> Result<Value, AppError> {
+    let images = images.map(|items| {
+        items
+            .into_iter()
+            .filter(|image| image.kind == "image" && !image.data.is_empty())
+            .map(|image| {
+                let mut map = serde_json::Map::new();
+                map.insert("type".into(), Value::String("image".into()));
+                map.insert("data".into(), Value::String(image.data));
+                map.insert("mimeType".into(), Value::String(image.mime_type));
+                if let Some(detail) = image.detail {
+                    map.insert("detail".into(), Value::String(detail));
+                }
+                Value::Object(map)
+            })
+            .collect::<Vec<_>>()
+    });
     state
         .sessions
         .lock()
         .await
-        .prompt(&session_id, message, streaming_behavior)
+        .prompt(&session_id, message, streaming_behavior, images)
         .await
 }
 
@@ -937,6 +1062,45 @@ mod tests {
             json!({
                 "sessionId": "session-1",
                 "event": { "type": "message_update" },
+            })
+        );
+    }
+
+    #[test]
+    fn slim_omp_event_strips_partial_and_signatures() {
+        let slim = slim_omp_event(json!({
+            "type": "message_update",
+            "assistantMessageEvent": {
+                "type": "text_delta",
+                "delta": "hi",
+                "partial": { "role": "assistant", "content": [] }
+            },
+            "message": {
+                "role": "assistant",
+                "content": [{
+                    "type": "thinking",
+                    "thinking": "note",
+                    "thinkingSignature": "huge"
+                }],
+                "usage": { "totalTokens": 99 }
+            }
+        }));
+
+        assert_eq!(
+            slim,
+            json!({
+                "type": "message_update",
+                "assistantMessageEvent": {
+                    "type": "text_delta",
+                    "delta": "hi"
+                },
+                "message": {
+                    "role": "assistant",
+                    "content": [{
+                        "type": "thinking",
+                        "thinking": "note"
+                    }]
+                }
             })
         );
     }

@@ -47,6 +47,11 @@ export interface SshProbeResult {
   remoteCwd?: string | null;
 }
 
+export interface ModelRolePreset {
+  name: string;
+  roles: Record<string, string>;
+}
+
 export interface AppSettings {
   approvalMode: ApprovalMode;
   ompBinary?: string | null;
@@ -56,6 +61,8 @@ export interface AppSettings {
   theme: string;
   /** False until the first-launch walkthrough is finished. */
   onboardingCompleted?: boolean;
+  /** Named role→selector bundles for the Agents panel. */
+  modelRolePresets?: ModelRolePreset[];
 }
 
 export interface SetupStatus {
@@ -69,6 +76,24 @@ export interface SetupStatus {
   impeccableRulesPresent: boolean;
   onboardingCompleted: boolean;
   homeDir?: string | null;
+}
+
+export interface ProviderKeyStatus {
+  name: string;
+  label: string;
+  configured: boolean;
+  masked?: string | null;
+}
+
+export interface ProviderKeyUpdate {
+  name: string;
+  value?: string | null;
+  clear?: boolean;
+}
+
+export interface LoginProvider {
+  id: string;
+  name: string;
 }
 
 export interface ExtensionUiRequest {
@@ -106,8 +131,16 @@ export type ExtensionUiResponse =
   | { confirmed: boolean }
   | { cancelled: true; timedOut?: boolean };
 
+/** OMP RPC ImageContent payload (base64, no data: prefix). */
+export interface PromptImage {
+  type: "image";
+  data: string;
+  mimeType: string;
+  detail?: "auto" | "low" | "high" | "original";
+}
+
 export type TranscriptItem =
-  | { id: string; kind: "user"; text: string }
+  | { id: string; kind: "user"; text: string; images?: PromptImage[] }
   | { id: string; kind: "assistant"; text: string; thinking?: string; responseId?: string }
   | {
       id: string;

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
+import { useLayoutStore } from "./layout-store.ts";
 import { PRIMARY_MODEL_ROLES, useSessionStore } from "../session/session-store.ts";
 import type {
   AvailableModel,
@@ -7,30 +8,22 @@ import type {
   ModelRoleScope,
 } from "../session/types.ts";
 
-const THINKING_LEVELS = [
-  "off",
-  "minimal",
-  "low",
-  "medium",
-  "high",
-  "xhigh",
-  "max",
-] as const;
+const FALLBACK_THINKING = ["off", "low", "medium", "high"] as const;
 
-const splitSelector = (selector: string) => {
-  const match = selector.match(/^(.*?)(?::(off|minimal|low|medium|high|xhigh|max|auto))?$/);
-  const base = match?.[1] ?? selector;
-  const thinking = match?.[2] ?? null;
-  const slash = base.indexOf("/");
-  if (slash === -1) {
-    return { provider: null as string | null, modelId: base, thinking, base };
-  }
-  return {
-    provider: base.slice(0, slash),
-    modelId: base.slice(slash + 1),
-    thinking,
-    base,
-  };
+/** Chip label: model id (+ optional :thinking), no provider prefix. */
+const chipModelLabel = (role: ModelRoleAssignment) => {
+  const raw = role.shortLabel?.trim() || role.selector?.trim() || "";
+  if (!raw || raw === "—") return "—";
+  const base = raw.includes(":") ? raw.slice(0, raw.lastIndexOf(":")) : raw;
+  const thinking = raw.includes(":") ? raw.slice(raw.lastIndexOf(":")) : "";
+  const model = base.includes("/") ? base.slice(base.lastIndexOf("/") + 1) : base;
+  const label = `${model}${thinking}`;
+  return label.length > 28 ? `${label.slice(0, 27)}…` : label;
+};
+
+const splitSelectorBase = (selector: string) => {
+  if (!selector.includes(":")) return selector;
+  return selector.slice(0, selector.lastIndexOf(":"));
 };
 
 const shortModel = (model: AvailableModel) => {
@@ -38,37 +31,43 @@ const shortModel = (model: AvailableModel) => {
   return label.length > 34 ? `${label.slice(0, 33)}…` : label;
 };
 
-const RolePicker = ({
-  role,
+const thinkingOptionsFor = (model: AvailableModel): string[] => {
+  if (model.thinkingEfforts.length > 0) return model.thinkingEfforts;
+  if (model.reasoning) return [...FALLBACK_THINKING];
+  return [];
+};
+
+const DefaultRolePicker = ({
   assignment,
-  models,
   scope,
-  modelsLoaded,
-  onEnsureModels,
 }: {
-  role: string;
-  assignment?: ModelRoleAssignment;
-  models: AvailableModel[];
+  assignment: ModelRoleAssignment;
   scope: ModelRoleScope;
-  modelsLoaded: boolean;
-  onEnsureModels: () => void;
 }) => {
   const setModelRole = useSessionStore((state) => state.setModelRole);
+  const availableModels = useSessionStore((state) => state.availableModels);
+  const availableModelsLoaded = useSessionStore(
+    (state) => state.availableModelsLoaded,
+  );
+  const loadAvailableModels = useSessionStore((state) => state.loadAvailableModels);
+  const openDrawer = useLayoutStore((state) => state.openDrawer);
+  const setAgentsFocusRole = useLayoutStore((state) => state.setAgentsFocusRole);
+
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
-  const [thinking, setThinking] = useState<string>(
-    assignment?.thinking ?? "high",
-  );
+  const [thinking, setThinking] = useState(assignment.thinking ?? "high");
   const [saving, setSaving] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    setThinking(assignment?.thinking ?? "high");
-  }, [assignment?.selector, assignment?.thinking]);
+    setThinking(assignment.thinking ?? "high");
+  }, [assignment.selector, assignment.thinking]);
 
   useEffect(() => {
     if (!open) return;
-    onEnsureModels();
+    if (!availableModelsLoaded || availableModels.length === 0) {
+      void loadAvailableModels();
+    }
     const onPointer = (event: MouseEvent) => {
       if (!rootRef.current?.contains(event.target as Node)) {
         setOpen(false);
@@ -87,23 +86,18 @@ const RolePicker = ({
       window.removeEventListener("mousedown", onPointer);
       window.removeEventListener("keydown", onKey);
     };
-  }, [open, onEnsureModels]);
-
-  const providers = useMemo(() => {
-    const set = new Set(models.map((model) => model.provider));
-    return [...set].sort((a, b) => a.localeCompare(b));
-  }, [models]);
+  }, [open, availableModelsLoaded, availableModels.length, loadAvailableModels]);
 
   const filtered = useMemo(() => {
     const needle = query.trim().toLowerCase();
     const list = !needle
-      ? models
-      : models.filter((model) => {
+      ? availableModels
+      : availableModels.filter((model) => {
           const hay = `${model.provider} ${model.id} ${model.name}`.toLowerCase();
           return hay.includes(needle);
         });
     return list.slice(0, 120);
-  }, [models, query]);
+  }, [availableModels, query]);
 
   const grouped = useMemo(() => {
     const map = new Map<string, AvailableModel[]>();
@@ -115,11 +109,21 @@ const RolePicker = ({
     return [...map.entries()];
   }, [filtered]);
 
-  const currentLabel = assignment?.shortLabel ?? "not set";
-  const currentBase = assignment ? splitSelector(assignment.selector).base : null;
+  const providers = useMemo(
+    () => [...new Set(availableModels.map((model) => model.provider))].sort(),
+    [availableModels],
+  );
+
+  const currentBase = assignment.selector
+    ? splitSelectorBase(assignment.selector)
+    : null;
+  const unset = !assignment.selector;
+  const label = chipModelLabel(assignment);
+  const full = assignment.selector?.trim() || "choose a model";
+  const sourceHint = assignment.source ? ` · ${assignment.source} override` : "";
 
   const choose = async (model: AvailableModel) => {
-    const efforts = model.thinkingEfforts;
+    const efforts = thinkingOptionsFor(model);
     const nextThinking =
       efforts.length > 0
         ? efforts.includes(thinking)
@@ -127,14 +131,13 @@ const RolePicker = ({
           : efforts.includes("high")
             ? "high"
             : efforts[efforts.length - 1]
-        : thinking;
-    const selector =
-      model.reasoning || efforts.length > 0
-        ? `${model.selector}:${nextThinking}`
-        : model.selector;
+        : null;
+    const selector = nextThinking
+      ? `${model.selector}:${nextThinking}`
+      : model.selector;
     setSaving(true);
     try {
-      const ok = await setModelRole(role, selector);
+      const ok = await setModelRole("default", selector);
       if (ok) {
         setOpen(false);
         setQuery("");
@@ -144,34 +147,39 @@ const RolePicker = ({
     }
   };
 
+  const openAgents = () => {
+    setOpen(false);
+    setQuery("");
+    setAgentsFocusRole("default");
+    openDrawer("agents");
+  };
+
   return (
     <div className={`role-picker${open ? " is-open" : ""}`} ref={rootRef}>
       <button
         type="button"
-        className="role-chip role-chip--button"
-        title={`${role}: ${assignment?.selector ?? "click to choose a logged-in model"}${
-          assignment?.source ? ` · ${assignment.source} override` : ""
-        }`}
+        className={`role-chip role-chip--button${unset ? " is-unset" : ""}`}
+        title={`default: ${full}${sourceHint}`}
         aria-haspopup="listbox"
         aria-expanded={open}
         onClick={() => setOpen((value) => !value)}
       >
-        <span className="role-chip__role">{role}</span>
-        <span className="role-chip__model">{currentLabel}</span>
+        <span className="role-chip__role">default</span>
+        <span className="role-chip__model">{label}</span>
         <span className="role-chip__caret" aria-hidden="true">
           ▾
         </span>
       </button>
 
       {open ? (
-        <div className="role-picker__menu" role="listbox" aria-label={`${role} model`}>
+        <div className="role-picker__menu" role="listbox" aria-label="default model">
           <div className="role-picker__toolbar">
             <input
               autoFocus
               value={query}
               onChange={(event) => setQuery(event.target.value)}
               placeholder="Filter provider or model…"
-              aria-label={`Filter models for ${role}`}
+              aria-label="Filter models for default"
             />
             <label className="role-picker__thinking">
               <span>think</span>
@@ -179,7 +187,15 @@ const RolePicker = ({
                 value={thinking}
                 onChange={(event) => setThinking(event.target.value)}
               >
-                {THINKING_LEVELS.map((level) => (
+                {[
+                  ...new Set([
+                    ...FALLBACK_THINKING,
+                    "minimal",
+                    "xhigh",
+                    "max",
+                    thinking,
+                  ]),
+                ].map((level) => (
                   <option key={level} value={level}>
                     {level}
                   </option>
@@ -189,19 +205,19 @@ const RolePicker = ({
           </div>
 
           <div className="role-picker__meta">
-            {modelsLoaded
-              ? `${providers.length} providers · ${models.length} authenticated models`
+            {availableModelsLoaded
+              ? `${providers.length} providers · ${availableModels.length} models`
               : "Loading authenticated models…"}
             {saving ? " · saving…" : ""}
             {` · saves to ${scope}`}
           </div>
 
           <div className="role-picker__list">
-            {!modelsLoaded ? (
+            {!availableModelsLoaded ? (
               <div className="role-picker__empty">Loading…</div>
             ) : grouped.length === 0 ? (
               <div className="role-picker__empty">
-                No authenticated models matched. Log in via OMP CLI first.
+                No authenticated models matched. Sign in via Settings, or open Agents.
               </div>
             ) : (
               grouped.map(([provider, providerModels]) => (
@@ -229,6 +245,12 @@ const RolePicker = ({
               ))
             )}
           </div>
+
+          <div className="role-picker__footer">
+            <button type="button" onClick={openAgents}>
+              Open Agents…
+            </button>
+          </div>
         </div>
       ) : null}
     </div>
@@ -238,14 +260,8 @@ const RolePicker = ({
 export const RoleModelStrip = () => {
   const modelRoles = useSessionStore((state) => state.modelRoles);
   const modelRoleScope = useSessionStore((state) => state.modelRoleScope);
-  const availableModels = useSessionStore((state) => state.availableModels);
-  const availableModelsLoaded = useSessionStore(
-    (state) => state.availableModelsLoaded,
-  );
-  const loadAvailableModels = useSessionStore((state) => state.loadAvailableModels);
-  const runtimeSnapshot = useSessionStore((state) =>
-    state.activeSessionId ? state.states[state.activeSessionId] : undefined,
-  );
+  const openDrawer = useLayoutStore((state) => state.openDrawer);
+  const setAgentsFocusRole = useLayoutStore((state) => state.setAgentsFocusRole);
 
   const roles = useMemo(() => {
     const preferred = new Set<string>(PRIMARY_MODEL_ROLES);
@@ -255,18 +271,16 @@ export const RoleModelStrip = () => {
       ...modelRoles.filter((role) => !preferred.has(role.role)),
     ] as ModelRoleAssignment[];
 
-    // Always show core roles even if unset in config.
     for (const role of PRIMARY_MODEL_ROLES) {
       if (!ordered.some((item) => item.role === role)) {
         ordered.unshift({
           role,
           selector: "",
-          shortLabel: "not set",
+          shortLabel: "—",
         });
       }
     }
 
-    // de-dupe after unshift
     const seen = new Set<string>();
     return ordered
       .filter((role) => {
@@ -277,26 +291,41 @@ export const RoleModelStrip = () => {
       .slice(0, 8);
   }, [modelRoles]);
 
-  // Keep selector stable by not depending on runtime snapshot object identity beyond active highlight.
-  void runtimeSnapshot;
+  const openAgents = (role: string) => {
+    setAgentsFocusRole(role);
+    openDrawer("agents");
+  };
 
   return (
     <div className="runtime-strip__roles" aria-label="OMP model roles">
-      {roles.map((role) => (
-        <RolePicker
-          key={role.role}
-          role={role.role}
-          assignment={role.selector ? role : undefined}
-          scope={modelRoleScope}
-          models={availableModels}
-          modelsLoaded={availableModelsLoaded}
-          onEnsureModels={() => {
-            if (!availableModelsLoaded || availableModels.length === 0) {
-              void loadAvailableModels();
-            }
-          }}
-        />
-      ))}
+      {roles.map((role) => {
+        if (role.role === "default") {
+          return (
+            <DefaultRolePicker
+              key={role.role}
+              assignment={role}
+              scope={modelRoleScope}
+            />
+          );
+        }
+
+        const unset = !role.selector;
+        const label = chipModelLabel(role);
+        const full = role.selector?.trim() || "configure in Agents";
+        const sourceHint = role.source ? ` · ${role.source} override` : "";
+        return (
+          <button
+            key={role.role}
+            type="button"
+            className={`role-chip${unset ? " is-unset" : ""}`}
+            title={`${role.role}: ${full}${sourceHint}`}
+            onClick={() => openAgents(role.role)}
+          >
+            <span className="role-chip__role">{role.role}</span>
+            <span className="role-chip__model">{label}</span>
+          </button>
+        );
+      })}
     </div>
   );
 };

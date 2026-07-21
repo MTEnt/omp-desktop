@@ -32,6 +32,13 @@ impl ApprovalMode {
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ModelRolePreset {
+    pub name: String,
+    pub roles: std::collections::BTreeMap<String, String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct AppSettings {
@@ -45,6 +52,9 @@ pub struct AppSettings {
     /// files is treated as completed so existing installs are not interrupted.
     #[serde(default)]
     pub onboarding_completed: bool,
+    /// Named role→selector bundles for the Agents panel.
+    #[serde(default)]
+    pub model_role_presets: Vec<ModelRolePreset>,
 }
 
 impl Default for AppSettings {
@@ -57,6 +67,7 @@ impl Default for AppSettings {
             default_profile: None,
             theme: "dark".into(),
             onboarding_completed: false,
+            model_role_presets: Vec::new(),
         }
     }
 }

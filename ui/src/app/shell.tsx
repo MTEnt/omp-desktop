@@ -1,10 +1,9 @@
-import { lazy, Suspense, useEffect, useMemo, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 
 import { useLayoutStore, type PanelId } from "./layout-store.ts";
 import { LeftRail, RightRail, type RailTarget } from "./rails.tsx";
 import {
-  readSessionRuntimeStatus,
-  selectActiveRuntimeSnapshot,
+  selectIsActiveStreaming,
   useSessionStore,
 } from "../session/session-store.ts";
 import { Composer } from "../session/composer.tsx";
@@ -13,6 +12,7 @@ import { ActivityPanel } from "../panels/activity-panel.tsx";
 import { PlanPanel } from "../panels/plan-panel.tsx";
 import { ProjectPanel } from "../panels/project-panel.tsx";
 import { SessionsPanel } from "../panels/sessions-panel.tsx";
+import { AgentsPanel } from "../panels/agents-panel.tsx";
 import { SettingsPanel } from "../panels/settings-panel.tsx";
 import { SubagentsPanel } from "../panels/subagents-panel.tsx";
 import { JobsPanel } from "../panels/jobs-panel.tsx";
@@ -21,6 +21,7 @@ import { ScratchpadPanel } from "../panels/scratchpad-panel.tsx";
 import { BrowserPanel } from "../panels/browser-panel.tsx";
 import { CompanionPanel } from "../panels/companion-panel.tsx";
 import { LaunchPanel } from "../panels/launch-panel.tsx";
+import { AppContextMenu } from "./app-context-menu.tsx";
 import { CommandPalette } from "./palette.tsx";
 import { PixelPieLogo } from "./pixel-pie-logo.tsx";
 import { RoleModelStrip } from "./role-model-picker.tsx";
@@ -36,6 +37,7 @@ const TerminalPanel = lazy(async () => ({
 const panelMeta: Record<PanelId, { label: string; eyebrow: string }> = {
   sessions: { label: "Sessions", eyebrow: "Workspace" },
   project: { label: "Project", eyebrow: "Context" },
+  agents: { label: "Agents", eyebrow: "Models" },
   settings: { label: "Settings", eyebrow: "Preferences" },
   terminal: { label: "Terminal", eyebrow: "Shell" },
   plan: { label: "Plan", eyebrow: "Execution" },
@@ -56,6 +58,7 @@ const SessionSidebar = () => {
   const sessions = useSessionStore((state) => state.sessions);
   const activeSessionId = useSessionStore((state) => state.activeSessionId);
   const streaming = useSessionStore((state) => state.streaming);
+  const openingFolder = useSessionStore((state) => state.openingFolder);
   const setActive = useSessionStore((state) => state.setActive);
   const closeSession = useSessionStore((state) => state.closeSession);
 
@@ -70,9 +73,10 @@ const SessionSidebar = () => {
             type="button"
             className="session-sidebar__new"
             onClick={() => void openFolder()}
-            title="Open folder"
+            disabled={openingFolder}
+            title={openingFolder ? "Opening folder…" : "Open folder"}
           >
-            +
+            {openingFolder ? "…" : "+"}
           </button>
           <button
             type="button"
@@ -130,8 +134,12 @@ const SessionSidebar = () => {
       ) : (
         <div className="session-sidebar__empty">
           <p>No sessions yet.</p>
-          <button type="button" onClick={() => void openFolder()}>
-            Open folder
+          <button
+            type="button"
+            disabled={openingFolder}
+            onClick={() => void openFolder()}
+          >
+            {openingFolder ? "Opening…" : "Open folder"}
           </button>
         </div>
       )}
@@ -145,6 +153,8 @@ const PanelBody = ({ panel }: { panel: PanelId }) => {
       return <SessionsPanel />;
     case "project":
       return <ProjectPanel />;
+    case "agents":
+      return <AgentsPanel />;
     case "settings":
       return <SettingsPanel />;
     case "plan":
@@ -225,9 +235,10 @@ export const Shell = () => {
   const toggleDrawer = useLayoutStore((state) => state.toggleDrawer);
   const togglePin = useLayoutStore((state) => state.togglePin);
   const activeSessionId = useSessionStore((state) => state.activeSessionId);
-  const runtimeSnapshot = useSessionStore(selectActiveRuntimeSnapshot);
   const refreshState = useSessionStore((state) => state.refreshState);
   const openFolder = useSessionStore((state) => state.openFolder);
+  const openingFolder = useSessionStore((state) => state.openingFolder);
+  const openingFolderPath = useSessionStore((state) => state.openingFolderPath);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [sshOpen, setSshOpen] = useState(false);
   const activeRemote = useSessionStore((state) => {
@@ -235,10 +246,6 @@ export const Shell = () => {
     if (!id) return null;
     return state.sessions.find((session) => session.id === id)?.remote ?? null;
   });
-  const runtimeStatus = useMemo(
-    () => readSessionRuntimeStatus(runtimeSnapshot),
-    [runtimeSnapshot],
-  );
   const activeTargets: RailTarget[] = [
     ...(drawer ? [drawer] : ["chat" as const]),
     ...pinned,
@@ -277,15 +284,19 @@ export const Shell = () => {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, []);
 
+  const isStreaming = useSessionStore(selectIsActiveStreaming);
+
   useEffect(() => {
     if (!activeSessionId) return;
     void refreshState(activeSessionId);
+    // Poll faster while a turn is active so a dropped agent_end can't leave
+    // the UI stuck on "Working…".
     const refreshTimer = window.setInterval(
       () => void refreshState(activeSessionId),
-      20_000,
+      isStreaming ? 2_000 : 20_000,
     );
     return () => window.clearInterval(refreshTimer);
-  }, [activeSessionId, refreshState]);
+  }, [activeSessionId, refreshState, isStreaming]);
 
   const sessionsSidebarOpen = useLayoutStore((state) => state.sessionsSidebarOpen);
   const toggleSessionsSidebar = useLayoutStore((state) => state.toggleSessionsSidebar);
@@ -323,31 +334,13 @@ export const Shell = () => {
         </div>
         <div className="runtime-strip" aria-label="Active session status">
           <RoleModelStrip />
-          <span
-            className="runtime-meta"
-            title={runtimeStatus.thinkingLevel ?? "Thinking level unavailable"}
-          >
-            think {runtimeStatus.thinkingLevel ?? "—"}
-          </span>
-          <span
-            className="runtime-meta"
-            title={
-              runtimeStatus.contextPercent === null
-                ? "Context usage unavailable"
-                : `${runtimeStatus.contextPercent}% context used`
-            }
-          >
-            ctx{" "}
-            {runtimeStatus.contextPercent === null
-              ? "—"
-              : `${Math.round(runtimeStatus.contextPercent)}%`}
-          </span>
           <button
             className="topbar-open-folder"
             type="button"
+            disabled={openingFolder}
             onClick={() => void openFolder()}
           >
-            Open folder
+            {openingFolder ? "Opening…" : "Open folder"}
           </button>
           <button
             className="topbar-open-folder"
@@ -398,7 +391,29 @@ export const Shell = () => {
           >
             <TaskProgressStrip />
             <Transcript />
+            <ExtensionUiDialog />
             <Composer />
+            {openingFolder ? (
+              <div className="folder-loading" role="status" aria-live="polite">
+                <div className="folder-loading__card">
+                  <span className="folder-loading__spinner" aria-hidden="true" />
+                  <div className="folder-loading__copy">
+                    <span className="folder-loading__eyebrow">Opening folder</span>
+                    <p>
+                      Starting OMP session
+                      {openingFolderPath ? (
+                        <>
+                          {" "}
+                          in <code>{openingFolderPath}</code>
+                        </>
+                      ) : (
+                        "…"
+                      )}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            ) : null}
           </main>
 
           {pinned.length > 0 && (
@@ -446,7 +461,7 @@ export const Shell = () => {
       <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} />
       <OnboardingWalkthrough />
       <SshConnectModal open={sshOpen} onClose={() => setSshOpen(false)} />
-      <ExtensionUiDialog />
+      <AppContextMenu />
     </div>
   );
 };

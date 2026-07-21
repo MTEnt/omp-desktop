@@ -7,6 +7,9 @@ import type {
   AppSettings,
   SetupStatus,
   AvailableModel,
+  ProviderKeyStatus,
+  ProviderKeyUpdate,
+  LoginProvider,
   RemoteTarget,
   SshHostInfo,
   SshProbeResult,
@@ -20,6 +23,7 @@ import type {
   RoleScratchpad,
   SessionInfo,
   ExtensionUiResponse,
+  PromptImage,
 } from "../session/types.ts";
 
 const getInternals = (): { invoke?: unknown } | null => {
@@ -61,6 +65,19 @@ export const api = {
 
   saveSettings: (settings: AppSettings) =>
     invoke<void>("save_settings", { settings }),
+
+  getProviderKeys: () => invoke<ProviderKeyStatus[]>("get_provider_keys"),
+
+  saveProviderKeys: (updates: ProviderKeyUpdate[]) =>
+    invoke<ProviderKeyStatus[]>("save_provider_keys", { updates }),
+
+  listLoginProviders: () => invoke<LoginProvider[]>("list_login_providers"),
+
+  loginProvider: (providerId: string) =>
+    invoke<void>("login_provider", { providerId }),
+
+  logoutProvider: (providerId: string) =>
+    invoke<void>("logout_provider", { providerId }),
 
   listSessions: () => invoke<SessionInfo[]>("list_sessions"),
 
@@ -120,11 +137,17 @@ export const api = {
 
   closePty: (sessionId: string) => invoke<void>("close_pty", { sessionId }),
 
-  prompt: (sessionId: string, message: string, streamingBehavior?: string) =>
+  prompt: (
+    sessionId: string,
+    message: string,
+    streamingBehavior?: string,
+    images?: PromptImage[],
+  ) =>
     invoke<unknown>("prompt", {
       sessionId,
       message,
       streamingBehavior: streamingBehavior ?? null,
+      images: images && images.length > 0 ? images : null,
     }),
 
   abort: (sessionId: string) => invoke<unknown>("abort", { sessionId }),

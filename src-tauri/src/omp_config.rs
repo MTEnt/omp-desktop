@@ -92,17 +92,15 @@ fn parse_selector(selector: &str) -> (Option<String>, Option<String>, Option<Str
 }
 
 fn short_label(selector: &str) -> String {
-    let (provider, model_id, thinking) = parse_selector(selector);
+    let (_provider, model_id, thinking) = parse_selector(selector);
     let model = model_id.as_deref().unwrap_or(selector);
     let mut label = model.to_string();
     if label.len() > 28 {
         label = format!("{}…", &label[..27]);
     }
-    match (provider.as_deref(), thinking.as_deref()) {
-        (Some(provider), Some(thinking)) => format!("{provider}/{label}:{thinking}"),
-        (Some(provider), None) => format!("{provider}/{label}"),
-        (None, Some(thinking)) => format!("{label}:{thinking}"),
-        (None, None) => label,
+    match thinking.as_deref() {
+        Some(thinking) => format!("{label}:{thinking}"),
+        None => label,
     }
 }
 
