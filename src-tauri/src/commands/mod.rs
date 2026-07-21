@@ -53,16 +53,17 @@ struct SessionEventEnvelope {
 }
 
 #[tauri::command(rename_all = "camelCase")]
-pub async fn get_model_roles() -> Result<ModelRolesSnapshot, AppError> {
-    omp_config::load_model_roles()
+pub async fn get_model_roles(cwd: Option<String>) -> Result<ModelRolesSnapshot, AppError> {
+    omp_config::load_model_roles_for(cwd.as_deref().map(Path::new))
 }
 
 #[tauri::command(rename_all = "camelCase")]
 pub async fn set_model_role(
     role: String,
     selector: String,
+    cwd: Option<String>,
 ) -> Result<ModelRolesSnapshot, AppError> {
-    omp_config::set_model_role(&role, &selector)
+    omp_config::set_model_role_for(&role, &selector, cwd.as_deref().map(Path::new))
 }
 
 #[tauri::command(rename_all = "camelCase")]
@@ -76,6 +77,7 @@ pub async fn list_available_models(
 
     let settings = state.settings.lock().await.clone();
     let omp_bin = settings::resolve_omp_binary(&settings).unwrap_or_else(|_| PathBuf::from("omp"));
+    settings::require_supported_omp_runtime(&omp_bin).await?;
     let cwd = std::env::temp_dir();
     let args = vec![
         "--mode".into(),
@@ -119,6 +121,8 @@ pub struct SetupStatus {
     pub omp_found: bool,
     pub omp_path: Option<String>,
     pub omp_version: Option<String>,
+    pub omp_supported: bool,
+    pub minimum_omp_version: String,
     pub impeccable_skill_present: bool,
     pub impeccable_skill_path: Option<String>,
     pub impeccable_rules_present: bool,
@@ -132,25 +136,6 @@ fn home_dir() -> Option<PathBuf> {
 
 fn which_omp(settings: &AppSettings) -> Option<PathBuf> {
     settings::resolve_omp_binary(settings).ok()
-}
-
-fn read_omp_version(bin: &Path) -> Option<String> {
-    let mut command = std::process::Command::new(bin);
-    command.arg("--version");
-    if let Some(path) = settings::runtime_command_path(bin) {
-        command.env("PATH", path);
-    }
-    let output = command.output().ok()?;
-    if !output.status.success() {
-        return None;
-    }
-    let text = String::from_utf8_lossy(&output.stdout);
-    let line = text.lines().next().unwrap_or("").trim();
-    if line.is_empty() {
-        None
-    } else {
-        Some(line.to_string())
-    }
 }
 
 fn impeccable_skill_candidates() -> Vec<PathBuf> {
@@ -167,11 +152,27 @@ fn first_existing(paths: &[PathBuf]) -> Option<PathBuf> {
     paths.iter().find(|p| p.is_file()).cloned()
 }
 
+async fn omp_runtime_status(path: Option<&Path>) -> (Option<String>, bool) {
+    let Some(path) = path else {
+        return (None, false);
+    };
+    match settings::inspect_omp_runtime(path).await {
+        Ok(runtime) => {
+            let supported = settings::is_supported_omp_version(runtime.components);
+            (Some(runtime.display), supported)
+        }
+        Err(error) => {
+            log::warn!("unable to inspect OMP runtime: {error}");
+            (None, false)
+        }
+    }
+}
+
 #[tauri::command(rename_all = "camelCase")]
 pub async fn get_setup_status(state: State<'_, AppState>) -> Result<SetupStatus, AppError> {
     let settings = state.settings.lock().await.clone();
     let omp_path = which_omp(&settings);
-    let omp_version = omp_path.as_ref().and_then(|p| read_omp_version(p));
+    let (omp_version, omp_supported) = omp_runtime_status(omp_path.as_deref()).await;
     let skill = first_existing(&impeccable_skill_candidates());
     let rules = home_dir().map(|h| h.join(".omp/agent/RULES.md"));
     let rules_present = rules
@@ -188,6 +189,8 @@ pub async fn get_setup_status(state: State<'_, AppState>) -> Result<SetupStatus,
         omp_found: omp_path.is_some(),
         omp_path: omp_path.map(|p| p.display().to_string()),
         omp_version,
+        omp_supported,
+        minimum_omp_version: settings::MINIMUM_OMP_VERSION_LABEL.into(),
         impeccable_skill_present: skill.is_some(),
         impeccable_skill_path: skill.map(|p| p.display().to_string()),
         impeccable_rules_present: rules_present,
@@ -224,7 +227,7 @@ fn run_npx(args: &[&str]) -> std::io::Result<std::process::ExitStatus> {
 }
 
 #[tauri::command(rename_all = "camelCase")]
-pub async fn install_impeccable() -> Result<SetupStatus, AppError> {
+pub async fn install_impeccable(state: State<'_, AppState>) -> Result<SetupStatus, AppError> {
     let home = home_dir().ok_or_else(|| AppError::Msg("home directory unavailable".into()))?;
     let agents_skill = home.join(".agents/skills/impeccable");
     let omp_skills = home.join(".omp/agent/skills");
@@ -298,17 +301,22 @@ pub async fn install_impeccable() -> Result<SetupStatus, AppError> {
     }
 
     let skill = first_existing(&impeccable_skill_candidates());
+    let app_settings = state.settings.lock().await.clone();
+    let omp_path = which_omp(&app_settings);
+    let (omp_version, omp_supported) = omp_runtime_status(omp_path.as_deref()).await;
     Ok(SetupStatus {
-        omp_found: which::which("omp").is_ok(),
-        omp_path: which::which("omp").ok().map(|p| p.display().to_string()),
-        omp_version: which::which("omp").ok().and_then(|p| read_omp_version(&p)),
+        omp_found: omp_path.is_some(),
+        omp_path: omp_path.map(|path| path.display().to_string()),
+        omp_version,
+        omp_supported,
+        minimum_omp_version: settings::MINIMUM_OMP_VERSION_LABEL.into(),
         impeccable_skill_present: skill.is_some(),
         impeccable_skill_path: skill.map(|p| p.display().to_string()),
         impeccable_rules_present: rules_path.is_file()
             && fs::read_to_string(&rules_path)
                 .map(|c| c.to_ascii_lowercase().contains("impeccable"))
                 .unwrap_or(false),
-        onboarding_completed: false,
+        onboarding_completed: app_settings.onboarding_completed,
         home_dir: Some(home.display().to_string()),
     })
 }

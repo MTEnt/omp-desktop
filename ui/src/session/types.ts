@@ -62,6 +62,8 @@ export interface SetupStatus {
   ompFound: boolean;
   ompPath?: string | null;
   ompVersion?: string | null;
+  ompSupported: boolean;
+  minimumOmpVersion: string;
   impeccableSkillPresent: boolean;
   impeccableSkillPath?: string | null;
   impeccableRulesPresent: boolean;
@@ -148,12 +150,16 @@ export interface ModelRoleAssignment {
   modelId?: string | null;
   thinking?: string | null;
   shortLabel: string;
+  source?: ModelRoleScope;
 }
 
 export interface ModelRolesSnapshot {
   configPath?: string | null;
+  scope: ModelRoleScope;
   roles: ModelRoleAssignment[];
 }
+
+export type ModelRoleScope = "global" | "project";
 
 export interface AvailableModel {
   provider: string;

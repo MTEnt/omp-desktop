@@ -1,10 +1,16 @@
 import { create } from "zustand";
-import { api, openDirectoryDialog, openExternalUrl } from "../lib/tauri.ts";
+import {
+  api,
+  isTauriRuntime,
+  openDirectoryDialog,
+  openExternalUrl,
+} from "../lib/tauri.ts";
 import type {
   ActivityItem,
   AppSettings,
   AvailableModel,
   ModelRoleAssignment,
+  ModelRoleScope,
   RemoteTarget,
   SkillInfo,
   LaunchRecipe,
@@ -24,6 +30,7 @@ export interface SessionStore {
   settings: AppSettings | null;
   modelRoles: ModelRoleAssignment[];
   modelRolesConfigPath: string | null;
+  modelRoleScope: ModelRoleScope;
   availableModels: AvailableModel[];
   availableModelsLoaded: boolean;
   loadSettings: () => Promise<void>;
@@ -79,6 +86,16 @@ const EMPTY_TRANSCRIPT: TranscriptItem[] = [];
 const EMPTY_ACTIVITY: ActivityItem[] = [];
 const EMPTY_TODOS: TodoPhase[] = [];
 const EMPTY_SUBAGENTS: SubagentInfo[] = [];
+
+const modelRoleCwd = (state: {
+  sessions: SessionInfo[];
+  activeSessionId: string | null;
+}): string | undefined => {
+  const session = state.sessions.find(
+    (candidate) => candidate.id === state.activeSessionId,
+  );
+  return session && !session.remote ? session.cwd : undefined;
+};
 
 export const selectActiveTranscript = (
   state: SessionStore,
@@ -277,6 +294,48 @@ const normalizeTodoPhases = (snapshot: unknown): TodoPhase[] => {
   return phases;
 };
 
+const normalizeSubagent = (
+  candidate: unknown,
+  index: number,
+): SubagentInfo | null => {
+  const subagent = asRecord(candidate);
+  if (!subagent) return null;
+  const progressValue = subagent.progress;
+  const progressRecord = asRecord(progressValue);
+  const id =
+    readString(subagent, "id", "agentId", "sessionId") ??
+    (progressRecord ? readString(progressRecord, "id") : undefined) ??
+    `subagent-${index + 1}`;
+  let recentOutput: string | undefined;
+  if (Array.isArray(progressRecord?.recentOutput)) {
+    for (let outputIndex = progressRecord.recentOutput.length - 1; outputIndex >= 0; outputIndex -= 1) {
+      const output = progressRecord.recentOutput[outputIndex];
+      if (typeof output === "string" && output.trim()) {
+        recentOutput = output;
+        break;
+      }
+    }
+  }
+  const progress =
+    typeof progressValue === "string" || typeof progressValue === "number"
+      ? String(progressValue)
+      : (progressRecord
+          ? readString(progressRecord, "lastIntent", "currentTool")
+          : undefined) ??
+        recentOutput ??
+        readString(subagent, "task", "currentTask", "description");
+  const rawStatus =
+    readString(subagent, "status", "state") ??
+    (progressRecord ? readString(progressRecord, "status") : undefined) ??
+    "unknown";
+  return {
+    id,
+    name: readString(subagent, "name", "label", "agent") ?? id,
+    status: rawStatus === "started" ? "running" : rawStatus,
+    ...(progress ? { progress } : {}),
+  };
+};
+
 const normalizeSubagents = (response: unknown): SubagentInfo[] => {
   const envelope = asRecord(response);
   const payload = envelope?.data ?? response;
@@ -284,22 +343,8 @@ const normalizeSubagents = (response: unknown): SubagentInfo[] => {
   if (!Array.isArray(value)) return [];
   const subagents: SubagentInfo[] = [];
   for (const [index, candidate] of value.entries()) {
-    const subagent = asRecord(candidate);
-    if (!subagent) continue;
-    const id =
-      readString(subagent, "id", "agentId", "sessionId") ??
-      `subagent-${index + 1}`;
-    const progressValue = subagent.progress;
-    const progress =
-      typeof progressValue === "string" || typeof progressValue === "number"
-        ? String(progressValue)
-        : readString(subagent, "task", "currentTask");
-    subagents.push({
-      id,
-      name: readString(subagent, "name", "label") ?? id,
-      status: readString(subagent, "status", "state") ?? "unknown",
-      ...(progress ? { progress } : {}),
-    });
+    const subagent = normalizeSubagent(candidate, index);
+    if (subagent) subagents.push(subagent);
   }
   return subagents;
 };
@@ -338,6 +383,18 @@ const withoutSession = <T>(
   delete next[sessionId];
   return next;
 };
+
+const mergeSessionRuntimeState = (
+  states: Record<string, unknown>,
+  sessionId: string,
+  patch: OmpEvent,
+): Record<string, unknown> => ({
+  ...states,
+  [sessionId]: {
+    ...(asRecord(states[sessionId]) ?? {}),
+    ...patch,
+  },
+});
 
 const firstDetail = (event: OmpEvent, ...keys: string[]): string => {
   for (const key of keys) {
@@ -677,6 +734,7 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
   settings: null,
   modelRoles: [],
   modelRolesConfigPath: null,
+  modelRoleScope: "global",
   availableModels: [],
   availableModelsLoaded: false,
   sessions: [],
@@ -697,7 +755,6 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
   roleMemoryCache: {},
 
   bootstrap: async () => {
-    void get().loadModelRoles();
     void get().loadAvailableModels();
     try {
       const [settings, sessions] = await Promise.all([
@@ -713,6 +770,7 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
             ? state.activeSessionId
             : (sessions[0]?.id ?? null),
       }));
+      void get().loadModelRoles();
     } catch (error) {
       console.error("Unable to bootstrap OMP Desktop", error);
     }
@@ -728,16 +786,25 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
   },
 
   loadModelRoles: async () => {
+    const cwd = modelRoleCwd(get());
     try {
-      const snapshot = await api.getModelRoles();
+      const snapshot = await api.getModelRoles(cwd);
+      if (modelRoleCwd(get()) !== cwd) return;
       set({
         modelRoles: snapshot.roles ?? [],
         modelRolesConfigPath: snapshot.configPath ?? null,
+        modelRoleScope: snapshot.scope ?? "global",
       });
     } catch (error) {
       // Roles are supplemental chrome; don't block the app.
       console.warn("Unable to load model roles", error);
-      set({ modelRoles: [], modelRolesConfigPath: null });
+      if (modelRoleCwd(get()) === cwd) {
+        set({
+          modelRoles: [],
+          modelRolesConfigPath: null,
+          modelRoleScope: "global",
+        });
+      }
     }
   },
 
@@ -752,11 +819,17 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
   },
 
   setModelRole: async (role, selector) => {
+    const cwd = modelRoleCwd(get());
     try {
-      const snapshot = await api.setModelRole(role, selector);
+      const snapshot = await api.setModelRole(role, selector, cwd);
+      if (modelRoleCwd(get()) !== cwd) {
+        void get().loadModelRoles();
+        return true;
+      }
       set({
         modelRoles: snapshot.roles ?? [],
         modelRolesConfigPath: snapshot.configPath ?? null,
+        modelRoleScope: snapshot.scope ?? "global",
         error: null,
       });
       return true;
@@ -777,7 +850,10 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
     }
   },
 
-  setActive: (sessionId) => set({ activeSessionId: sessionId }),
+  setActive: (sessionId) => {
+    set({ activeSessionId: sessionId });
+    if (isTauriRuntime()) void get().loadModelRoles();
+  },
 
   openFolder: async (cwd, resume) => {
     try {
@@ -802,6 +878,7 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
         error: null,
       }));
       void get().ensureRoleMemoryPreamble("default", session.id);
+      if (isTauriRuntime()) void get().loadModelRoles();
     } catch (error) {
       set({ error: formatOpenSessionError(error) });
     }
@@ -858,6 +935,7 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
         error: null,
       }));
       void get().ensureRoleMemoryPreamble("default", session.id);
+      if (isTauriRuntime()) void get().loadModelRoles();
     } catch (error) {
       set({
         error:
@@ -936,6 +1014,7 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
         error: null,
       };
     });
+    if (isTauriRuntime()) void get().loadModelRoles();
 
     try {
       await api.closeSession(sessionId);
@@ -1108,6 +1187,26 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
     if (!isRecord(event)) return;
     const type = readString(event, "type");
 
+    if (type === "rpc_frame_error") {
+      const message =
+        readString(event, "error") ?? "OMP RPC transport reported an unknown error";
+      const originalType = readString(event, "originalType");
+      set((state) => ({
+        error: `OMP RPC transport error: ${message}`,
+        activity: {
+          ...state.activity,
+          [sessionId]: appendActivity(
+            state.activity[sessionId] ?? [],
+            originalType
+              ? `RPC transport error · ${originalType}`
+              : "RPC transport error",
+            event,
+          ),
+        },
+      }));
+      return;
+    }
+
     if (type === "extension_ui_request") {
       const request = parseExtensionUiRequest(event);
       if (!request) return;
@@ -1160,6 +1259,35 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
         return;
       }
 
+      if (request.method === "setTitle" && request.title) {
+        set((state) => ({
+          sessions: state.sessions.map((session) =>
+            session.id === sessionId
+              ? { ...session, title: request.title ?? session.title }
+              : session,
+          ),
+        }));
+        return;
+      }
+
+      if (request.method === "setStatus") {
+        if (request.statusText) {
+          set((state) => ({
+            activity: {
+              ...state.activity,
+              [sessionId]: appendActivity(
+                state.activity[sessionId] ?? [],
+                request.statusKey
+                  ? `${request.statusKey} · ${request.statusText}`
+                  : request.statusText ?? "OMP status updated",
+                event,
+              ),
+            },
+          }));
+        }
+        return;
+      }
+
       if (
         request.method !== "select" &&
         request.method !== "confirm" &&
@@ -1184,14 +1312,180 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
       return;
     }
 
+    if (type === "subagent_lifecycle" || type === "subagent_progress") {
+      const payload = asRecord(event.payload);
+      if (!payload) return;
+      set((state) => {
+        const current = state.subagents[sessionId] ?? [];
+        const next = normalizeSubagent(payload, current.length);
+        if (!next) return state;
+        const existingIndex = current.findIndex(
+          (subagent) => subagent.id === next.id,
+        );
+        const subagents = [...current];
+        if (existingIndex === -1) {
+          subagents.push(next);
+        } else {
+          const existing = subagents[existingIndex];
+          subagents[existingIndex] = {
+            ...existing,
+            ...next,
+            ...(next.progress
+              ? { progress: next.progress }
+              : existing.progress
+                ? { progress: existing.progress }
+                : {}),
+          };
+        }
+        const activity =
+          type === "subagent_lifecycle"
+            ? {
+                ...state.activity,
+                [sessionId]: appendActivity(
+                  state.activity[sessionId] ?? [],
+                  `${next.name} · ${next.status}`,
+                  event,
+                ),
+              }
+            : state.activity;
+        return {
+          subagents: {
+            ...state.subagents,
+            [sessionId]: subagents,
+          },
+          activity,
+        };
+      });
+      return;
+    }
+
+    if (type === "thinking_level_changed") {
+      const thinkingLevel = readString(event, "thinkingLevel", "resolved");
+      if (!thinkingLevel) return;
+      set((state) => ({
+        states: mergeSessionRuntimeState(state.states, sessionId, {
+          thinkingLevel,
+        }),
+      }));
+      return;
+    }
+
+    if (type === "auto_compaction_start" || type === "auto_compaction_end") {
+      const started = type === "auto_compaction_start";
+      const action = readString(event, "action");
+      const aborted = event.aborted === true;
+      set((state) => ({
+        states: mergeSessionRuntimeState(state.states, sessionId, {
+          isCompacting: started,
+        }),
+        activity: {
+          ...state.activity,
+          [sessionId]: appendActivity(
+            state.activity[sessionId] ?? [],
+            `Context compaction ${
+              started ? "started" : aborted ? "aborted" : "completed"
+            }${action ? ` · ${action}` : ""}`,
+            event,
+          ),
+        },
+      }));
+      return;
+    }
+
+    if (type === "notice") {
+      const message = readString(event, "message") ?? "OMP notification";
+      const level = readString(event, "level");
+      set((state) => ({
+        ...(level === "error" ? { error: message } : {}),
+        activity: {
+          ...state.activity,
+          [sessionId]: appendActivity(
+            state.activity[sessionId] ?? [],
+            message,
+            event,
+          ),
+        },
+      }));
+      return;
+    }
+
+    if (type === "auto_retry_start" || type === "auto_retry_end") {
+      const started = type === "auto_retry_start";
+      const attempt =
+        typeof event.attempt === "number" ? ` · attempt ${event.attempt}` : "";
+      const succeeded = event.success === true;
+      set((state) => ({
+        activity: {
+          ...state.activity,
+          [sessionId]: appendActivity(
+            state.activity[sessionId] ?? [],
+            started
+              ? `Model retry scheduled${attempt}`
+              : `Model retry ${succeeded ? "recovered" : "ended"}${attempt}`,
+            event,
+          ),
+        },
+      }));
+      return;
+    }
+
+    if (
+      type === "retry_fallback_applied" ||
+      type === "retry_fallback_succeeded"
+    ) {
+      const from = readString(event, "from");
+      const to = readString(event, "to", "model");
+      set((state) => ({
+        activity: {
+          ...state.activity,
+          [sessionId]: appendActivity(
+            state.activity[sessionId] ?? [],
+            type === "retry_fallback_applied"
+              ? `Model fallback${from && to ? ` · ${from} → ${to}` : ""}`
+              : `Model fallback succeeded${to ? ` · ${to}` : ""}`,
+            event,
+          ),
+        },
+      }));
+      return;
+    }
+
+    if (type === "todo_reminder" || type === "todo_auto_clear") {
+      void get().refreshState(sessionId);
+      return;
+    }
+
+    if (type === "ttsr_triggered" || type === "goal_updated" || type === "irc_message") {
+      const label =
+        type === "ttsr_triggered"
+          ? "TTSR guidance applied"
+          : type === "goal_updated"
+            ? event.goal == null
+              ? "Goal cleared"
+              : "Goal updated"
+            : "IRC message received";
+      set((state) => ({
+        activity: {
+          ...state.activity,
+          [sessionId]: appendActivity(
+            state.activity[sessionId] ?? [],
+            label,
+            event,
+          ),
+        },
+      }));
+      return;
+    }
+
     if (type === "agent_start" || type === "agent_end") {
+      const willContinue = type === "agent_end" && event.willContinue === true;
       set((state) => ({
         streaming: {
           ...state.streaming,
-          [sessionId]: type === "agent_start",
+          [sessionId]: type === "agent_start" || willContinue,
         },
       }));
-      if (type === "agent_end") {
+      if (type === "agent_end" && !willContinue) {
         // Never block the UI/stream path: refresh + memory/job board work runs after the turn.
         void get().refreshState(sessionId);
         const session = get().sessions.find((item) => item.id === sessionId);

@@ -1,7 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { PRIMARY_MODEL_ROLES, useSessionStore } from "../session/session-store.ts";
-import type { AvailableModel, ModelRoleAssignment } from "../session/types.ts";
+import type {
+  AvailableModel,
+  ModelRoleAssignment,
+  ModelRoleScope,
+} from "../session/types.ts";
 
 const THINKING_LEVELS = [
   "off",
@@ -38,12 +42,14 @@ const RolePicker = ({
   role,
   assignment,
   models,
+  scope,
   modelsLoaded,
   onEnsureModels,
 }: {
   role: string;
   assignment?: ModelRoleAssignment;
   models: AvailableModel[];
+  scope: ModelRoleScope;
   modelsLoaded: boolean;
   onEnsureModels: () => void;
 }) => {
@@ -143,7 +149,9 @@ const RolePicker = ({
       <button
         type="button"
         className="role-chip role-chip--button"
-        title={`${role}: ${assignment?.selector ?? "click to choose a logged-in model"}`}
+        title={`${role}: ${assignment?.selector ?? "click to choose a logged-in model"}${
+          assignment?.source ? ` · ${assignment.source} override` : ""
+        }`}
         aria-haspopup="listbox"
         aria-expanded={open}
         onClick={() => setOpen((value) => !value)}
@@ -185,6 +193,7 @@ const RolePicker = ({
               ? `${providers.length} providers · ${models.length} authenticated models`
               : "Loading authenticated models…"}
             {saving ? " · saving…" : ""}
+            {` · saves to ${scope}`}
           </div>
 
           <div className="role-picker__list">
@@ -228,6 +237,7 @@ const RolePicker = ({
 
 export const RoleModelStrip = () => {
   const modelRoles = useSessionStore((state) => state.modelRoles);
+  const modelRoleScope = useSessionStore((state) => state.modelRoleScope);
   const availableModels = useSessionStore((state) => state.availableModels);
   const availableModelsLoaded = useSessionStore(
     (state) => state.availableModelsLoaded,
@@ -277,6 +287,7 @@ export const RoleModelStrip = () => {
           key={role.role}
           role={role.role}
           assignment={role.selector ? role : undefined}
+          scope={modelRoleScope}
           models={availableModels}
           modelsLoaded={availableModelsLoaded}
           onEnsureModels={() => {
