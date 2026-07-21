@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import { useLayoutStore } from "../app/layout-store.ts";
 import { MarkdownBody } from "./markdown.tsx";
+import { ToolCard } from "./tool-cards.tsx";
 import {
   selectActiveSession,
   selectActiveTranscript,
@@ -160,18 +161,7 @@ const TranscriptEntry = ({
       );
 
     case "tool":
-      return (
-        <section className={`tool-card tool-card--${item.status}`}>
-          <header>
-            <span className="tool-card__mark" aria-hidden="true">
-              ›_
-            </span>
-            <strong>{item.name}</strong>
-            <span className="tool-card__status">{item.status}</span>
-          </header>
-          {item.detail ? <pre>{item.detail}</pre> : null}
-        </section>
-      );
+      return <ToolCard item={item} />;
 
     case "system":
       return (

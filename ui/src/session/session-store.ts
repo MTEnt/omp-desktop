@@ -27,6 +27,7 @@ import {
   buildAttentionInbox,
   type AttentionItem,
 } from "./attention.ts";
+import { parseToolPayload } from "./tool-render.ts";
 
 type OmpEvent = Record<string, unknown>;
 
@@ -1836,22 +1837,21 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
       const detail = isEnd
         ? firstDetail(event, "result", "output", "error", "detail")
         : firstDetail(event, "detail", "update", "args", "input", "parameters");
+      const mergedDetail =
+        existing?.kind === "tool" ? detail || existing.detail : detail;
+      const parsed = parseToolPayload(toolName, mergedDetail || "");
       const item: TranscriptItem = {
         id: tool.id,
         kind: "tool",
         name: toolName,
-        detail,
+        detail: mergedDetail,
         status: isEnd ? (isError ? "error" : "done") : "running",
+        ...(parsed.kind !== "raw" ? { parsed } : {}),
       };
       const nextTranscript = [...transcript];
 
       if (existingIndex === -1) {
         nextTranscript.push(item);
-      } else if (existing?.kind === "tool") {
-        nextTranscript[existingIndex] = {
-          ...item,
-          detail: detail || existing.detail,
-        };
       } else {
         nextTranscript[existingIndex] = item;
       }

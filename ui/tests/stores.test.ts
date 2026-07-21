@@ -218,15 +218,15 @@ describe("session event reducer", () => {
       result: "done",
     });
 
-    assert.deepEqual(useSessionStore.getState().transcripts["session-1"], [
-      {
-        id: "tool-1",
-        kind: "tool",
-        name: "read",
-        detail: "done",
-        status: "done",
-      },
-    ]);
+    const toolItem = useSessionStore.getState().transcripts["session-1"]?.[0];
+    assert.equal(toolItem?.kind, "tool");
+    if (toolItem?.kind !== "tool") throw new Error("expected tool item");
+    assert.equal(toolItem.id, "tool-1");
+    assert.equal(toolItem.name, "read");
+    assert.equal(toolItem.detail, "done");
+    assert.equal(toolItem.status, "done");
+    assert.ok(toolItem.parsed);
+    assert.equal(toolItem.parsed?.kind, "read");
     assert.deepEqual(
       useSessionStore.getState().activity["session-1"].map((item) => item.text),
       ["read started", "read completed"],

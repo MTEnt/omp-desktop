@@ -1101,6 +1101,135 @@ button:disabled {
   white-space: pre-wrap;
 }
 
+.tool-bash,
+.tool-read,
+.tool-eval {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.tool-bash > pre,
+.tool-read > pre,
+.tool-eval > pre {
+  max-height: 230px;
+  margin: 0;
+  overflow: auto;
+  padding: 10px 12px 12px;
+  border-top: 1px solid var(--line-soft);
+  color: #8f98a6;
+  background: rgba(8, 10, 13, 0.44);
+  font-family: "SFMono-Regular", Menlo, monospace;
+  font-size: 10px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+}
+
+.tool-eval > pre + pre {
+  border-top-color: rgba(41, 47, 55, 0.85);
+}
+
+.tool-foot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  padding: 7px 12px 9px;
+  border-top: 1px solid var(--line-soft);
+  color: var(--ink-faint);
+  background: rgba(12, 15, 19, 0.55);
+  font-family: "SFMono-Regular", Menlo, monospace;
+  font-size: 9px;
+  letter-spacing: 0.03em;
+}
+
+.tool-foot > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.diff-wrap {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  border-top: 1px solid var(--line-soft);
+  background: rgba(8, 10, 13, 0.44);
+}
+
+.diff-wrap__header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 28px;
+  padding: 0 12px;
+  border-bottom: 1px solid var(--line-soft);
+  color: var(--ink-muted);
+  font-family: "SFMono-Regular", Menlo, monospace;
+  font-size: 9px;
+}
+
+.diff-wrap__target {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ink);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.diff-wrap__stats {
+  display: inline-flex;
+  gap: 8px;
+  margin-left: auto;
+  font-size: 9px;
+  letter-spacing: 0.04em;
+}
+
+.diff-wrap__adds {
+  color: color-mix(in srgb, var(--success) 72%, #9ca3b0);
+}
+
+.diff-wrap__rems {
+  color: color-mix(in srgb, var(--danger) 72%, #9ca3b0);
+}
+
+.diff-wrap__body {
+  max-height: 260px;
+  margin: 0;
+  overflow: auto;
+  padding: 8px 0 10px;
+  color: #8f98a6;
+  font-family: "SFMono-Regular", Menlo, monospace;
+  font-size: 10px;
+  line-height: 1.5;
+  white-space: pre;
+}
+
+.diff-line {
+  display: block;
+  padding: 0 12px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.diff-line--add {
+  color: color-mix(in srgb, var(--success) 78%, #d7e0ea);
+  background: rgba(0, 255, 136, 0.06);
+}
+
+.diff-line--rem {
+  color: color-mix(in srgb, var(--danger) 78%, #d7e0ea);
+  background: rgba(255, 71, 87, 0.07);
+}
+
+.diff-line--ctx {
+  color: #8f98a6;
+}
+
+.diff-line--meta {
+  color: var(--ink-faint);
+}
+
 .system-message {
   display: flex;
   align-items: flex-start;

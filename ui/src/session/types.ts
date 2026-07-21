@@ -1,3 +1,5 @@
+import type { ParsedToolPayload } from "./tool-render.ts";
+
 export type ApprovalMode = "yolo" | "write" | "alwaysAsk";
 
 export type SessionStatus = "starting" | "ready" | "error" | "exited";
@@ -115,6 +117,7 @@ export type TranscriptItem =
       name: string;
       detail: string;
       status: "running" | "done" | "error";
+      parsed?: ParsedToolPayload;
     }
   | { id: string; kind: "system"; text: string };
 
