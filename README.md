@@ -22,7 +22,7 @@ Prebuilt installers are published on [GitHub Releases](https://github.com/MTEnt/
 | --- | --- |
 | macOS | Universal `.dmg` |
 | Windows | NSIS `.exe` installer |
-| Linux | `.deb` and `.AppImage` |
+| Linux | `.deb`, `.rpm`, and `.AppImage` |
 
 **macOS (unsigned):** builds are not Apple-notarized yet. After download, if Gatekeeper blocks the app, open **System Settings → Privacy & Security** and choose **Open Anyway**, or run `xattr -dr com.apple.quarantine "/path/to/OMP Desktop.app"`. Notarization secrets are not required for CI.
 
@@ -71,6 +71,28 @@ On first launch, OMP Desktop opens a short setup:
 
 Replay anytime from **Settings → Replay first-launch walkthrough**.
 
+
+## Launch on Linux
+
+Install the [Tauri 2 Linux system dependencies](https://v2.tauri.app/start/prerequisites/#linux), then:
+
+```bash
+npm run launch:linux
+# same as: npm run dev
+```
+
+Build native packages (Debian, RPM, AppImage):
+
+```bash
+npm run build:linux
+```
+
+Outputs:
+
+- `src-tauri/target/release/bundle/deb/*.deb`
+- `src-tauri/target/release/bundle/rpm/*.rpm`
+- `src-tauri/target/release/bundle/appimage/*.AppImage`
+- `src-tauri/target/release/app` portable binary
 
 ## Launch on Windows
 

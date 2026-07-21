@@ -11,6 +11,8 @@
     "check": "npm test && npm run lint && npm run ui:build",
     "start": "tauri dev",
     "launch:mac": "./Launch OMP Desktop.command",
+    "launch:linux": "tauri dev",
+    "build:linux": "tauri build --bundles deb,rpm,appimage",
     "icons": "echo \"Icons live in src-tauri/icons (regenerate via repo script if needed)\"",
     "build:windows": "tauri build --bundles nsis",
     "launch:windows": "powershell -ExecutionPolicy Bypass -File ./scripts/launch-windows.ps1",
