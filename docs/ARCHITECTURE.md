@@ -78,7 +78,7 @@ Implementation: `src-tauri/src/rpc/client.rs`.
 - **Outbound:** encoding a request line that exceeds the limit fails before write.
 - **Inbound:** accumulating a frame past the limit fails the reader (emits `rpc_frame_error` and stops).
 
-This is a hard transport constraint for stock OMP RPC. Large payloads (especially image attachments planned in Phase 4) must be compressed/rejected in the host so frames stay under budget with headroom.
+This is a hard transport constraint for stock OMP RPC. Large payloads (especially image attachments via `image_attach`) must be compressed/rejected in the host so frames stay under budget with headroom.
 
 Default request timeout is 30s; process exit wait is 2s.
 
@@ -135,8 +135,17 @@ Separately, each RPC child gets a **temp YAML overlay** enabling OMP’s mnemopi
 - Role model picker lives in the shell strip (`ui/src/app/role-model-picker.tsx`).
 
 ### Session history rewrite
+`session_history.rs` supports targeted assistant-message rewrite for hosted sessions. Historical browse/search/archive lives in `session_library` (under `~/.omp/agent/sessions`).
 
-`session_history.rs` supports targeted assistant-message rewrite for hosted sessions. It is **not** the Phase 1 historical session library (scan/search/archive under `~/.omp/agent/sessions`).
+### Additional host modules (roadmap phases 0–8)
+
+- **`session_library`** (`src-tauri/src/session_library.rs`) — list/search/archive/rename/delete historic OMP session JSONL trees; library panel UI.
+- **`image_attach`** (`src-tauri/src/image_attach.rs`) — compress/validate composer image attachments under `MAX_RPC_FRAME_BYTES` before RPC prompt.
+- **`git_status`** (`src-tauri/src/git_status.rs`) — best-effort branch/dirty chip via `git -C <cwd>`.
+- **`project_fs`** (`src-tauri/src/project_fs.rs`) — path-contained read-only project directory listing and file preview.
+- **`catalog`** (`src-tauri/src/catalog.rs`) — scan `~/.omp` (and project) for MCP servers, agents, and skills.
+- **`github`** (`src-tauri/src/github.rs`) — best-effort issues/PR snapshot via `gh` CLI (no tokens in payload).
+- **`omp_context`** (`src-tauri/src/omp_context.rs`) — shared cwd/profile/`omp` binary context for ephemeral RPC processes (see above).
 
 ## Stock OMP only (boundary)
 
@@ -147,8 +156,6 @@ Hard product boundary:
 - Prefer OMP RPC commands, session JSONL on disk, and tools like `gh` over inventing parallel authority.
 - Out of roadmap scope unless stock OMP gains them: mobile clients, Kubernetes operator, host pairing fleets, Linear, TTS, CSS tweak panels.
 
-UI helpers in `ui/src/lib/tauri.ts` wrap stock RPC names (`get_available_commands`, `get_session_stats`, `compact`, `export_html`, `set_subagent_subscription`, `get_subagent_messages`, `get_login_providers`, `login`, …) via the generic `rpc_command` host path.
-
 ## Security notes
 
 | Topic | Intent / current posture |
@@ -156,7 +163,7 @@ UI helpers in `ui/src/lib/tauri.ts` wrap stock RPC names (`get_available_command
 | **CSP** | `src-tauri/tauri.conf.json` sets a restrictive CSP: `default-src 'self'`, no `object-src`, locked `frame-ancestors` / `form-action`, scripts self-only. Styles allow `'unsafe-inline'` for the bundled UI. `connect-src` / `frame-src` permit IPC and localhost companions (browser/companion panels). |
 | **Secrets** | Provider auth is OMP-owned (`login` / `get_login_providers`). Desktop must not display raw API keys or tokens in UI or diagnostics. Prefer system browser for `open_url` login flows. |
 | **RPC frame budget** | Enforce `MAX_RPC_FRAME_BYTES` on read and write; reject oversized image/attachment frames in host code before they hit the pipe. |
-| **Path containment** | Future session-library and project file APIs must reject `..` / absolute escapes and only operate under allowed roots (session cwd, `~/.omp/agent/sessions`, archive root). SSH remote listing stays on the probed remote target. |
+| **Path containment** | Session-library and project file APIs reject `..` / absolute escapes and only operate under allowed roots (session cwd, `~/.omp/agent/sessions`, archive root). SSH remote listing stays on the probed remote target. |
 | **Process isolation** | One OMP child per tab; kill-on-drop; PTY lifecycle tied to session close. |
 | **Config writes** | Prefer OMP APIs / surgical edits; do not blindly rewrite whole user YAML configs. |
 | **Approvals** | Default approval mode is **write** (`--approval-mode write`); yolo adds `--auto-approve`. Extension UI requests surface through the existing respond path. |
@@ -164,10 +171,10 @@ UI helpers in `ui/src/lib/tauri.ts` wrap stock RPC names (`get_available_command
 ## UI shell sketch
 
 - **Zen rails** (`ui/src/app/rails.tsx`, `layout-store.ts`): icon rails; drawer vs pinned dock.
-- **Panels (present):** project, plan, activity, subagents, terminal, jobs, memory, scratchpad, browser, companion, launch, sessions, settings.
-- **Core session UI:** transcript, composer, task progress strip, SSH connect modal, onboarding walkthrough, command palette.
+- **Panels (present):** project, plan, activity, subagents (+ inspector), terminal, jobs, memory, scratchpad, browser, companion, launch, sessions, session library, attention, review, catalog, github, settings.
+- **Core session UI:** transcript (tool/diff cards), composer (slash autocomplete + safe image attach), task progress / stats chips, workspace grouping, git branch chip, SSH connect modal, onboarding walkthrough, command palette, provider login in settings.
 
-Roadmap phases add library, attention, review, catalogs, GitHub, workspaces, stats chips, slash/images, releases — see the feature matrix for status.
+Roadmap phases 0–8 surfaces above are reflected in [FEATURE_MATRIX.md](./FEATURE_MATRIX.md); packaging is CI + tag releases (in-app updater still open).
 
 ## Key source map
 
@@ -177,7 +184,12 @@ Roadmap phases add library, attention, review, catalogs, GitHub, workspaces, sta
 | RPC client + frame limit | `src-tauri/src/rpc/client.rs` |
 | Sessions | `src-tauri/src/session/mod.rs` |
 | Ephemeral process context | `src-tauri/src/omp_context.rs` |
-| PTY / SSH / memory | `src-tauri/src/pty/`, `ssh/`, `memory/` |
+| Session library / search | `src-tauri/src/session_library.rs` |
+| Image attach prep | `src-tauri/src/image_attach.rs` |
+| Git status chip | `src-tauri/src/git_status.rs` |
+| Project file browser | `src-tauri/src/project_fs.rs` |
+| MCP/agents catalog | `src-tauri/src/catalog.rs` |
+| GitHub snapshot | `src-tauri/src/github.rs` |
 | UI bridge | `ui/src/lib/tauri.ts` |
 | Session store + events | `ui/src/session/session-store.ts`, `ui/src/App.tsx` |
 | Shell / layout | `ui/src/app/shell.tsx`, `rails.tsx`, `layout-store.ts` |
