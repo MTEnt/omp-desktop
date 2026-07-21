@@ -22,12 +22,17 @@ import type {
   SubagentInfo,
   TodoPhase,
   TranscriptItem,
+  ReviewFile,
 } from "./types.ts";
 import {
   buildAttentionInbox,
   type AttentionItem,
 } from "./attention.ts";
 import { parseToolPayload } from "./tool-render.ts";
+import {
+  reviewFileFromTool,
+  upsertReviewFile,
+} from "./review.ts";
 
 type OmpEvent = Record<string, unknown>;
 
@@ -49,6 +54,7 @@ export interface SessionStore {
   activity: Record<string, ActivityItem[]>;
   todos: Record<string, TodoPhase[]>;
   subagents: Record<string, SubagentInfo[]>;
+  reviewFiles: Record<string, ReviewFile[]>;
   states: Record<string, unknown>;
   error: string | null;
   streaming: Record<string, boolean>;
@@ -95,6 +101,7 @@ const EMPTY_TRANSCRIPT: TranscriptItem[] = [];
 const EMPTY_ACTIVITY: ActivityItem[] = [];
 const EMPTY_TODOS: TodoPhase[] = [];
 const EMPTY_SUBAGENTS: SubagentInfo[] = [];
+const EMPTY_REVIEW_FILES: ReviewFile[] = [];
 
 const modelRoleCwd = (state: {
   sessions: SessionInfo[];
@@ -132,6 +139,11 @@ export const selectActiveSubagents = (state: SessionStore): SubagentInfo[] =>
   state.activeSessionId
     ? (state.subagents[state.activeSessionId] ?? EMPTY_SUBAGENTS)
     : EMPTY_SUBAGENTS;
+
+export const selectActiveReviewFiles = (state: SessionStore): ReviewFile[] =>
+  state.activeSessionId
+    ? (state.reviewFiles[state.activeSessionId] ?? EMPTY_REVIEW_FILES)
+    : EMPTY_REVIEW_FILES;
 
 export const selectActiveSession = (
   state: SessionStore,
@@ -864,6 +876,7 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
   activity: {},
   todos: {},
   subagents: {},
+  reviewFiles: {},
   states: {},
   error: null,
   streaming: {},
@@ -992,6 +1005,7 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
         activity: { ...state.activity, [session.id]: [] },
         todos: { ...state.todos, [session.id]: [] },
         subagents: { ...state.subagents, [session.id]: [] },
+        reviewFiles: { ...state.reviewFiles, [session.id]: [] },
         states: { ...state.states, [session.id]: {} },
         streaming: { ...state.streaming, [session.id]: false },
         browserArtifacts: { ...state.browserArtifacts, [session.id]: [] },
@@ -1050,6 +1064,7 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
         },
         todos: { ...state.todos, [session.id]: [] },
         subagents: { ...state.subagents, [session.id]: [] },
+        reviewFiles: { ...state.reviewFiles, [session.id]: [] },
         states: { ...state.states, [session.id]: {} },
         streaming: { ...state.streaming, [session.id]: false },
         browserArtifacts: { ...state.browserArtifacts, [session.id]: [] },
@@ -1126,6 +1141,7 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
         activity: withoutSession(state.activity, sessionId),
         todos: withoutSession(state.todos, sessionId),
         subagents: withoutSession(state.subagents, sessionId),
+        reviewFiles: withoutSession(state.reviewFiles, sessionId),
         states: withoutSession(state.states, sessionId),
         streaming: withoutSession(state.streaming, sessionId),
         browserArtifacts: withoutSession(state.browserArtifacts, sessionId),
@@ -1916,12 +1932,25 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
         }
       }
 
+      let nextReviewFiles = state.reviewFiles[sessionId] ?? EMPTY_REVIEW_FILES;
+      const reviewEntry = reviewFileFromTool(
+        toolName,
+        mergedDetail || "",
+        tool.id,
+        item.status,
+      );
+      if (reviewEntry) {
+        nextReviewFiles = upsertReviewFile(nextReviewFiles, reviewEntry);
+      }
+
+
       return {
         transcripts: { ...state.transcripts, [sessionId]: nextTranscript },
         activity: { ...state.activity, [sessionId]: nextActivity },
         browserArtifacts: { ...state.browserArtifacts, [sessionId]: browserArtifacts },
         companions: { ...state.companions, [sessionId]: companions },
         activeCompanionId,
+        reviewFiles: { ...state.reviewFiles, [sessionId]: nextReviewFiles },
       };
     });
   },

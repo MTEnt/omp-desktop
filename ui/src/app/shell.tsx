@@ -11,6 +11,7 @@ import { Composer } from "../session/composer.tsx";
 import { Transcript } from "../session/transcript.tsx";
 import { ActivityPanel } from "../panels/activity-panel.tsx";
 import { AttentionPanel } from "../panels/attention-panel.tsx";
+import { ReviewPanel } from "../panels/review-panel.tsx";
 import { PlanPanel } from "../panels/plan-panel.tsx";
 import { ProjectPanel } from "../panels/project-panel.tsx";
 import { SessionsPanel } from "../panels/sessions-panel.tsx";
@@ -42,6 +43,7 @@ const panelMeta: Record<PanelId, { label: string; eyebrow: string }> = {
   plan: { label: "Plan", eyebrow: "Execution" },
   activity: { label: "Activity", eyebrow: "Timeline" },
   attention: { label: "Attention", eyebrow: "Inbox" },
+  review: { label: "Review", eyebrow: "Read-only diffs" },
   subagents: { label: "Subagents", eyebrow: "Delegation" },
   jobs: { label: "Job board", eyebrow: "Persistent work" },
   memory: { label: "Role memory", eyebrow: "Long-term" },
@@ -51,7 +53,7 @@ const panelMeta: Record<PanelId, { label: string; eyebrow: string }> = {
   companion: { label: "Companion", eyebrow: "Local servers" },
 };
 
-const rightPanels: PanelId[] = ["plan", "activity", "attention", "subagents", "jobs", "memory", "scratchpad", "launch", "browser", "companion"];
+const rightPanels: PanelId[] = ["plan", "activity", "attention", "review", "subagents", "jobs", "memory", "scratchpad", "launch", "browser", "companion"];
 
 
 const SessionSidebar = () => {
@@ -155,6 +157,8 @@ const PanelBody = ({ panel }: { panel: PanelId }) => {
       return <ActivityPanel />;
     case "attention":
       return <AttentionPanel />;
+    case "review":
+      return <ReviewPanel />;
     case "subagents":
       return <SubagentsPanel />;
     case "jobs":

@@ -8,6 +8,7 @@ export type PanelId =
   | "plan"
   | "activity"
   | "attention"
+  | "review"
   | "subagents"
   | "jobs"
   | "memory"

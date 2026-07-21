@@ -127,6 +127,16 @@ export interface ActivityItem {
   text: string;
 }
 
+export interface ReviewFile {
+  path: string;
+  toolId: string;
+  adds?: number;
+  rems?: number;
+  diff?: string;
+  status: "running" | "done" | "error";
+}
+
+
 export interface SubagentInfo {
   id: string;
   name: string;
