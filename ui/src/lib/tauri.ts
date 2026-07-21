@@ -23,6 +23,7 @@ import type {
   RoleScratchpad,
   SessionInfo,
   ExtensionUiResponse,
+  PromptImage,
 } from "../session/types.ts";
 
 const getInternals = (): { invoke?: unknown } | null => {
@@ -131,11 +132,17 @@ export const api = {
 
   closePty: (sessionId: string) => invoke<void>("close_pty", { sessionId }),
 
-  prompt: (sessionId: string, message: string, streamingBehavior?: string) =>
+  prompt: (
+    sessionId: string,
+    message: string,
+    streamingBehavior?: string,
+    images?: PromptImage[],
+  ) =>
     invoke<unknown>("prompt", {
       sessionId,
       message,
       streamingBehavior: streamingBehavior ?? null,
+      images: images && images.length > 0 ? images : null,
     }),
 
   abort: (sessionId: string) => invoke<unknown>("abort", { sessionId }),

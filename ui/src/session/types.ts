@@ -295,3 +295,10 @@ export interface LaunchRecipe {
   prompt: string;
   openPanel?: "browser" | "companion" | "launch" | "plan" | "terminal";
 }
+/** OMP RPC ImageContent payload (base64, no data: prefix). */
+export interface PromptImage {
+  type: "image";
+  data: string;
+  mimeType: string;
+  detail?: "auto" | "low" | "high" | "original";
+}

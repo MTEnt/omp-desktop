@@ -766,18 +766,45 @@ pub async fn close_pty(state: State<'_, AppState>, session_id: String) -> Result
     state.ptys.lock().await.close_pty(&session_id)
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PromptImage {
+    #[serde(rename = "type")]
+    pub kind: String,
+    pub data: String,
+    pub mime_type: String,
+    pub detail: Option<String>,
+}
+
 #[tauri::command(rename_all = "camelCase")]
 pub async fn prompt(
     state: State<'_, AppState>,
     session_id: String,
     message: String,
     streaming_behavior: Option<String>,
+    images: Option<Vec<PromptImage>>,
 ) -> Result<Value, AppError> {
+    let images = images.map(|items| {
+        items
+            .into_iter()
+            .filter(|image| image.kind == "image" && !image.data.is_empty())
+            .map(|image| {
+                let mut map = serde_json::Map::new();
+                map.insert("type".into(), Value::String("image".into()));
+                map.insert("data".into(), Value::String(image.data));
+                map.insert("mimeType".into(), Value::String(image.mime_type));
+                if let Some(detail) = image.detail {
+                    map.insert("detail".into(), Value::String(detail));
+                }
+                Value::Object(map)
+            })
+            .collect::<Vec<_>>()
+    });
     state
         .sessions
         .lock()
         .await
-        .prompt(&session_id, message, streaming_behavior)
+        .prompt(&session_id, message, streaming_behavior, images)
         .await
 }
 
