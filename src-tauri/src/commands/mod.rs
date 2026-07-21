@@ -207,7 +207,6 @@ pub async fn logout_provider(
     auth_broker::logout_provider(&settings, &provider_id).await
 }
 
-
 #[tauri::command(rename_all = "camelCase")]
 pub async fn save_settings(
     state: State<'_, AppState>,
@@ -1060,16 +1059,6 @@ mod tests {
     }
 
     #[test]
-    fn unresolved_omp_binary_falls_back_to_command_name() {
-        let settings = AppSettings {
-            omp_binary: Some("/definitely/missing/omp".into()),
-            ..AppSettings::default()
-        };
-
-        assert_eq!(omp_binary_or_fallback(&settings), PathBuf::from("omp"));
-    }
-
-    #[test]
     fn slim_omp_event_strips_partial_and_signatures() {
         let slim = slim_omp_event(json!({
             "type": "message_update",
@@ -1106,5 +1095,15 @@ mod tests {
                 }
             })
         );
+    }
+
+    #[test]
+    fn unresolved_omp_binary_falls_back_to_command_name() {
+        let settings = AppSettings {
+            omp_binary: Some("/definitely/missing/omp".into()),
+            ..AppSettings::default()
+        };
+
+        assert_eq!(omp_binary_or_fallback(&settings), PathBuf::from("omp"));
     }
 }

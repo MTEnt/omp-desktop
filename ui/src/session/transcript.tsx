@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { useLayoutStore } from "../app/layout-store.ts";
+import { ImageLightbox } from "./image-lightbox.tsx";
 import { MarkdownBody } from "./markdown.tsx";
 import {
   selectActiveSession,
@@ -9,6 +10,7 @@ import {
   useSessionStore,
 } from "./session-store.ts";
 import type { TranscriptItem } from "./types.ts";
+import { useSmoothText } from "./use-smooth-text.ts";
 
 const EmptyGlyph = () => (
   <div className="transcript-empty__glyph" aria-hidden="true">
@@ -51,15 +53,18 @@ const AssistantEntry = ({
   item,
   streaming,
   sessionId,
+  onImageClick,
 }: {
   item: Extract<TranscriptItem, { kind: "assistant" }>;
   streaming?: boolean;
   sessionId: string | null;
+  onImageClick: (src: string, alt?: string) => void;
 }) => {
   const updateAssistantText = useSessionStore((state) => state.updateAssistantText);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(item.text);
   const [saving, setSaving] = useState(false);
+  const smoothText = useSmoothText(item.text, Boolean(streaming) && !editing);
 
   useEffect(() => {
     if (!editing) setDraft(item.text);
@@ -125,10 +130,22 @@ const AssistantEntry = ({
             </button>
           </div>
         </div>
-      ) : item.text ? (
-        <MarkdownBody content={item.text} className="md-body--assistant" />
+      ) : smoothText ? (
+        <MarkdownBody
+          content={smoothText}
+          className="md-body--assistant"
+          streaming={streaming}
+          onImageClick={onImageClick}
+        />
       ) : streaming && !item.thinking ? (
-        <p className="assistant-pending">OMP is responding…</p>
+        <p className="assistant-pending">
+          <span className="run-dots" aria-hidden="true">
+            <i />
+            <i />
+            <i />
+          </span>
+          Working…
+        </p>
       ) : null}
     </article>
   );
@@ -138,25 +155,61 @@ const TranscriptEntry = ({
   item,
   streaming,
   sessionId,
+  onImageClick,
 }: {
   item: TranscriptItem;
   streaming?: boolean;
   sessionId: string | null;
+  onImageClick: (src: string, alt?: string) => void;
 }) => {
   switch (item.kind) {
-    case "user":
+    case "user": {
+      const hasImages = Boolean(item.images && item.images.length > 0);
+      const showText = Boolean(
+        item.text && !(hasImages && item.text === "(image)"),
+      );
       return (
         <article className="transcript-item transcript-item--user">
           <header>
             <span>You</span>
           </header>
-          <p className="user-message-text">{item.text}</p>
+          {hasImages ? (
+            <div className="user-message-images">
+              {item.images!.map((image, index) => {
+                const src = `data:${image.mimeType};base64,${image.data}`;
+                return (
+                  <button
+                    type="button"
+                    key={`${item.id}-img-${index}`}
+                    className="user-message-image-button"
+                    title="Open image preview"
+                    onClick={() =>
+                      onImageClick(src, `Attached image ${index + 1}`)
+                    }
+                  >
+                    <img
+                      className="user-message-image"
+                      src={src}
+                      alt={`Attached image ${index + 1}`}
+                    />
+                  </button>
+                );
+              })}
+            </div>
+          ) : null}
+          {showText ? <p className="user-message-text">{item.text}</p> : null}
         </article>
       );
+    }
 
     case "assistant":
       return (
-        <AssistantEntry item={item} streaming={streaming} sessionId={sessionId} />
+        <AssistantEntry
+          item={item}
+          streaming={streaming}
+          sessionId={sessionId}
+          onImageClick={onImageClick}
+        />
       );
 
     case "tool":
@@ -190,6 +243,7 @@ export const Transcript = () => {
   const isStreaming = useSessionStore(selectIsActiveStreaming);
   const error = useSessionStore((state) => state.error);
   const openFolder = useSessionStore((state) => state.openFolder);
+  const openingFolder = useSessionStore((state) => state.openingFolder);
   const restartSession = useSessionStore((state) => state.restartSession);
   const clearError = useSessionStore((state) => state.clearError);
   const openSettings = () => {
@@ -197,8 +251,10 @@ export const Transcript = () => {
   };
   const viewportRef = useRef<HTMLDivElement>(null);
   const followOutputRef = useRef(true);
-  const [opening, setOpening] = useState(false);
   const [restarting, setRestarting] = useState(false);
+  const [lightbox, setLightbox] = useState<{ src: string; alt?: string } | null>(
+    null,
+  );
 
   useEffect(() => {
     followOutputRef.current = true;
@@ -210,14 +266,15 @@ export const Transcript = () => {
     viewport.scrollTop = viewport.scrollHeight;
   }, [activeSessionId, items, isStreaming]);
 
-  const chooseFolder = async () => {
-    setOpening(true);
-    try {
-      await openFolder();
-    } finally {
-      setOpening(false);
-    }
-  };
+  useEffect(() => {
+    const onTick = () => {
+      const viewport = viewportRef.current;
+      if (!viewport || !followOutputRef.current) return;
+      viewport.scrollTop = viewport.scrollHeight;
+    };
+    window.addEventListener("omp-desktop:stream-tick", onTick);
+    return () => window.removeEventListener("omp-desktop:stream-tick", onTick);
+  }, []);
 
   const handleRestart = async () => {
     if (!activeSessionId) return;
@@ -247,6 +304,11 @@ export const Transcript = () => {
   const sessionExited = activeSession?.status === "exited";
   const lastAssistantId =
     [...items].reverse().find((item) => item.kind === "assistant")?.id ?? null;
+  const lastItem = items[items.length - 1];
+  const showWorkingPlaceholder =
+    isStreaming &&
+    items.length > 0 &&
+    lastItem?.kind === "user";
 
   return (
     <div
@@ -297,10 +359,10 @@ export const Transcript = () => {
           <button
             className="open-folder-cta"
             type="button"
-            disabled={opening}
-            onClick={() => void chooseFolder()}
+            disabled={openingFolder}
+            onClick={() => void openFolder()}
           >
-            {opening ? "Opening…" : "Open folder"}
+            {openingFolder ? "Opening…" : "Open folder"}
           </button>
         </div>
       ) : sessionExited && items.length === 0 ? (
@@ -335,6 +397,7 @@ export const Transcript = () => {
               item={item}
               key={`${item.kind}-${item.id}`}
               sessionId={activeSessionId}
+              onImageClick={(src, alt) => setLightbox({ src, alt })}
               streaming={
                 isStreaming &&
                 item.kind === "assistant" &&
@@ -342,8 +405,32 @@ export const Transcript = () => {
               }
             />
           ))}
+          {showWorkingPlaceholder ? (
+            <article
+              className="transcript-item transcript-item--assistant"
+              aria-live="polite"
+            >
+              <header>OMP</header>
+              <p className="assistant-pending">
+                <span className="run-dots" aria-hidden="true">
+                  <i />
+                  <i />
+                  <i />
+                </span>
+                Working…
+              </p>
+            </article>
+          ) : null}
         </div>
       )}
+
+      {lightbox ? (
+        <ImageLightbox
+          src={lightbox.src}
+          alt={lightbox.alt}
+          onClose={() => setLightbox(null)}
+        />
+      ) : null}
     </div>
   );
 };

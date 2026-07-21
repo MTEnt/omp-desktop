@@ -33,6 +33,8 @@ beforeEach(() => {
     states: {},
     error: null,
     streaming: {},
+    openingFolder: false,
+    openingFolderPath: null,
     extensionUiRequests: {},
   });
 });

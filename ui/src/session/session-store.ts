@@ -5,6 +5,7 @@ import type {
   AppSettings,
   AvailableModel,
   ModelRoleAssignment,
+  PromptImage,
   RemoteTarget,
   SkillInfo,
   LaunchRecipe,
@@ -40,6 +41,8 @@ export interface SessionStore {
   states: Record<string, unknown>;
   error: string | null;
   streaming: Record<string, boolean>;
+  openingFolder: boolean;
+  openingFolderPath: string | null;
   extensionUiRequests: Record<string, ExtensionUiRequest[]>;
   bootstrap: () => Promise<void>;
   setActive: (sessionId: string | null) => void;
@@ -60,7 +63,11 @@ export interface SessionStore {
   closeSession: (sessionId: string) => Promise<void>;
   refreshState: (sessionId: string) => Promise<void>;
   loadSubagents: (sessionId: string) => Promise<void>;
-  send: (message: string, streamingBehavior?: string) => Promise<boolean>;
+  send: (
+    message: string,
+    streamingBehavior?: string,
+    images?: PromptImage[],
+  ) => Promise<boolean>;
   abort: () => Promise<void>;
   applyOmpEvent: (sessionId: string, event: unknown) => void;
   respondExtensionUi: (
@@ -688,6 +695,8 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
   states: {},
   error: null,
   streaming: {},
+  openingFolder: false,
+  openingFolderPath: null,
   extensionUiRequests: {},
   browserArtifacts: {},
   companions: {},
@@ -780,9 +789,17 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
   setActive: (sessionId) => set({ activeSessionId: sessionId }),
 
   openFolder: async (cwd, resume) => {
+    if (get().openingFolder) return;
+    let selectedCwd: string | null = null;
     try {
-      const selectedCwd = cwd ?? (await openDirectoryDialog());
+      selectedCwd = cwd ?? (await openDirectoryDialog());
       if (!selectedCwd) return;
+
+      set({
+        openingFolder: true,
+        openingFolderPath: selectedCwd,
+        error: null,
+      });
 
       const session = await api.createSession(selectedCwd, resume);
       set((state) => ({
@@ -804,6 +821,10 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
       void get().ensureRoleMemoryPreamble("default", session.id);
     } catch (error) {
       set({ error: formatOpenSessionError(error) });
+    } finally {
+      if (selectedCwd) {
+        set({ openingFolder: false, openingFolderPath: null });
+      }
     }
   },
 
@@ -950,12 +971,25 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
     try {
       const snapshot = await api.getState(sessionId);
       if (!get().sessions.some((session) => session.id === sessionId)) return;
-      set((state) => ({
-        states: { ...state.states, [sessionId]: snapshot },
+      const envelope = asRecord(snapshot);
+      const state = asRecord(envelope?.data) ?? envelope;
+      const isStreaming =
+        typeof state?.isStreaming === "boolean" ? state.isStreaming : null;
+      set((current) => ({
+        states: { ...current.states, [sessionId]: snapshot },
         todos: {
-          ...state.todos,
+          ...current.todos,
           [sessionId]: normalizeTodoPhases(snapshot),
         },
+        // Recover if IPC dropped agent_end / message events.
+        ...(isStreaming === null
+          ? {}
+          : {
+              streaming: {
+                ...current.streaming,
+                [sessionId]: isStreaming,
+              },
+            }),
       }));
     } catch (error) {
       if (get().sessions.some((session) => session.id === sessionId)) {
@@ -984,21 +1018,30 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
     }
   },
 
-  send: async (message, streamingBehavior) => {
+  send: async (message, streamingBehavior, images) => {
     const sessionId = get().activeSessionId;
     const text = message.trim();
-    if (!sessionId || !text) return false;
+    const attachments = (images ?? []).filter(
+      (image) => image.type === "image" && image.data && image.mimeType,
+    );
+    if (!sessionId || (!text && attachments.length === 0)) return false;
+    const displayText = text || (attachments.length > 0 ? "(image)" : "");
 
     set((state) => {
       const current = state.transcripts[sessionId] ?? [];
+      const userItem: Extract<TranscriptItem, { kind: "user" }> = {
+        id: nextItemId(current, "user"),
+        kind: "user",
+        text: displayText,
+      };
+      if (attachments.length > 0) userItem.images = attachments;
       return {
         transcripts: {
           ...state.transcripts,
-          [sessionId]: [
-            ...current,
-            { id: nextItemId(current, "user"), kind: "user", text },
-          ],
+          [sessionId]: [...current, userItem],
         },
+        // Optimistic: show working state before agent_start arrives.
+        streaming: { ...state.streaming, [sessionId]: true },
       };
     });
 
@@ -1015,7 +1058,13 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
           void get().ensureRoleMemoryPreamble("default", sessionId);
         }
       }
-      await api.prompt(sessionId, `${preamble}${text}`, streamingBehavior);
+      const promptText = text ? `${preamble}${text}` : preamble || "(image)";
+      await api.prompt(
+        sessionId,
+        promptText,
+        streamingBehavior,
+        attachments.length > 0 ? attachments : undefined,
+      );
       return true;
     } catch (error) {
       set((state) => {
@@ -1032,6 +1081,7 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
               },
             ],
           },
+          streaming: { ...state.streaming, [sessionId]: false },
         };
       });
       return false;
@@ -1192,6 +1242,72 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
         },
       }));
       if (type === "agent_end") {
+        // Fallback when streamed deltas were dropped: apply final assistant text.
+        const messages = Array.isArray(event.messages) ? event.messages : [];
+        for (const candidate of [...messages].reverse()) {
+          const message = asRecord(candidate);
+          if (message?.role !== "assistant") continue;
+          const responseId = readString(message, "responseId");
+          const content = message.content;
+          let text = "";
+          let thinking = "";
+          if (Array.isArray(content)) {
+            for (const block of content) {
+              const entry = asRecord(block);
+              if (!entry) continue;
+              if (entry.type === "text" && typeof entry.text === "string") {
+                text += entry.text;
+              }
+              if (
+                entry.type === "thinking" &&
+                typeof entry.thinking === "string"
+              ) {
+                thinking += entry.thinking;
+              }
+            }
+          }
+          if (!text && !thinking) break;
+          set((state) => {
+            const current = state.transcripts[sessionId] ?? [];
+            const last = current.at(-1);
+            const canReplace =
+              last?.kind === "assistant" &&
+              (!last.text ||
+                last.responseId === responseId ||
+                last.id === responseId);
+            if (canReplace && last?.kind === "assistant") {
+              const nextItem: Extract<TranscriptItem, { kind: "assistant" }> = {
+                id: responseId ?? last.id,
+                kind: "assistant",
+                text: text || last.text,
+              };
+              const nextThinking = thinking || last.thinking;
+              if (nextThinking) nextItem.thinking = nextThinking;
+              if (responseId !== undefined) nextItem.responseId = responseId;
+              return {
+                transcripts: {
+                  ...state.transcripts,
+                  [sessionId]: [...current.slice(0, -1), nextItem],
+                },
+              };
+            }
+            if (last?.kind === "assistant" && last.text) return state;
+            const nextItem: Extract<TranscriptItem, { kind: "assistant" }> = {
+              id: responseId ?? nextItemId(current, "assistant"),
+              kind: "assistant",
+              text,
+            };
+            if (thinking) nextItem.thinking = thinking;
+            if (responseId !== undefined) nextItem.responseId = responseId;
+            return {
+              transcripts: {
+                ...state.transcripts,
+                [sessionId]: [...current, nextItem],
+              },
+            };
+          });
+          break;
+        }
         // Never block the UI/stream path: refresh + memory/job board work runs after the turn.
         void get().refreshState(sessionId);
         const session = get().sessions.find((item) => item.id === sessionId);
@@ -1290,17 +1406,24 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
     if (type === "message_update") {
       const assistantEvent = asRecord(event.assistantMessageEvent);
       const message = asRecord(event.message);
-      const delta = assistantEvent
-        ? readString(assistantEvent, "delta", "text", "thinking")
-        : readString(event, "delta", "text", "thinking");
       const eventType = assistantEvent
         ? readString(assistantEvent, "type")
         : readString(event, "messageType", "type");
-      const isText = eventType === "text_delta" || eventType === "text";
+      const delta = assistantEvent
+        ? readString(assistantEvent, "delta", "text", "thinking", "content")
+        : readString(event, "delta", "text", "thinking", "content");
+      const isText =
+        eventType === "text_delta" ||
+        eventType === "text" ||
+        eventType === "text_end";
       const isThinking =
         eventType === "thinking_delta" ||
         eventType === "thinking" ||
+        eventType === "thinking_end" ||
         eventType === "reasoning_delta";
+      // text_end / thinking_end carry the full block in `content` — replace, don't append.
+      const replaceBlock =
+        eventType === "text_end" || eventType === "thinking_end";
       if ((!isText && !isThinking) || delta === undefined) return;
       const responseId = message ? readString(message, "responseId") : undefined;
 
@@ -1322,12 +1445,18 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
         if (canMerge && last?.kind === "assistant") {
           const nextResponseId = responseId ?? last.responseId;
           const nextThinking = isThinking
-            ? `${last.thinking ?? ""}${delta}`
+            ? replaceBlock
+              ? delta
+              : `${last.thinking ?? ""}${delta}`
             : last.thinking;
           const nextItem: Extract<TranscriptItem, { kind: "assistant" }> = {
             id: responseId ?? last.id,
             kind: "assistant",
-            text: isText ? `${last.text}${delta}` : last.text,
+            text: isText
+              ? replaceBlock
+                ? delta
+                : `${last.text}${delta}`
+              : last.text,
           };
           if (nextThinking) nextItem.thinking = nextThinking;
           if (nextResponseId !== undefined) {

@@ -61,6 +61,8 @@ export interface AppSettings {
   theme: string;
   /** False until the first-launch walkthrough is finished. */
   onboardingCompleted?: boolean;
+  /** Named role→selector bundles for the Agents panel. */
+  modelRolePresets?: ModelRolePreset[];
 }
 
 export interface SetupStatus {
@@ -127,8 +129,16 @@ export type ExtensionUiResponse =
   | { confirmed: boolean }
   | { cancelled: true; timedOut?: boolean };
 
+/** OMP RPC ImageContent payload (base64, no data: prefix). */
+export interface PromptImage {
+  type: "image";
+  data: string;
+  mimeType: string;
+  detail?: "auto" | "low" | "high" | "original";
+}
+
 export type TranscriptItem =
-  | { id: string; kind: "user"; text: string }
+  | { id: string; kind: "user"; text: string; images?: PromptImage[] }
   | { id: string; kind: "assistant"; text: string; thinking?: string; responseId?: string }
   | {
       id: string;
@@ -294,11 +304,4 @@ export interface LaunchRecipe {
   /** prompt sent to active session */
   prompt: string;
   openPanel?: "browser" | "companion" | "launch" | "plan" | "terminal";
-}
-/** OMP RPC ImageContent payload (base64, no data: prefix). */
-export interface PromptImage {
-  type: "image";
-  data: string;
-  mimeType: string;
-  detail?: "auto" | "low" | "high" | "original";
 }
