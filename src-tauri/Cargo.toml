@@ -30,7 +30,7 @@ thiserror = "2"
 uuid = { version = "1", features = ["v4", "serde"] }
 parking_lot = "0.12"
 dirs = "6"
-which = "7"
+which = "8"
 portable-pty = "0.9"
 serde_yaml = "0.9"
 rusqlite = { version = "0.32", features = ["bundled"] }
