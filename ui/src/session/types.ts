@@ -278,3 +278,23 @@ export interface LaunchRecipe {
   prompt: string;
   openPanel?: "browser" | "companion" | "launch" | "plan" | "terminal";
 }
+
+export interface HistoricSessionSummary {
+  id: string;
+  path: string;
+  project: string;
+  cwd: string;
+  title?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  messageCount: number;
+  model?: string | null;
+  sizeBytes: number;
+  archived: boolean;
+}
+
+export interface SessionSearchHit {
+  session: HistoricSessionSummary;
+  line: number;
+  snippet: string;
+}

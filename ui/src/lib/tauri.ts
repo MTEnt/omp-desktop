@@ -7,7 +7,9 @@ import type {
   AppSettings,
   SetupStatus,
   AvailableModel,
+  HistoricSessionSummary,
   RemoteTarget,
+  SessionSearchHit,
   SshHostInfo,
   SshProbeResult,
   SshRecent,
@@ -299,6 +301,27 @@ export const api = {
       assigneeRole: job.assigneeRole ?? null,
       sessionId: job.sessionId ?? null,
     }),
+
+  listHistoricSessions: (includeArchived = false) =>
+    invoke<HistoricSessionSummary[]>("list_historic_sessions", { includeArchived }),
+
+  searchHistoricSessions: (query: string, limit?: number) =>
+    invoke<SessionSearchHit[]>("search_historic_sessions", {
+      query,
+      limit: limit ?? null,
+    }),
+
+  archiveHistoricSession: (path: string) =>
+    invoke<void>("archive_historic_session", { path }),
+
+  unarchiveHistoricSession: (path: string) =>
+    invoke<void>("unarchive_historic_session", { path }),
+
+  deleteHistoricSession: (path: string) =>
+    invoke<void>("delete_historic_session", { path }),
+
+  renameHistoricSession: (path: string, title: string) =>
+    invoke<void>("rename_historic_session", { path, title }),
 };
 
 export async function openExternalUrl(rawUrl: string): Promise<void> {
