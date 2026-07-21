@@ -36,6 +36,7 @@ const rightItems: RailItem[] = [
   { id: "scratchpad", label: "Scratchpad", shortcut: "⌘9" },
   { id: "launch", label: "Launch", shortcut: "⌘L" },
   { id: "catalog", label: "Catalog", shortcut: "⌘M" },
+  { id: "github", label: "GitHub", shortcut: "⌘G" },
   { id: "browser", label: "Browser", shortcut: "⌘B" },
   { id: "companion", label: "Companion", shortcut: "⌘U" },
 ];
@@ -143,6 +144,13 @@ const Icon = ({ target }: { target: RailTarget }) => {
           <path d="M6 5.5h12v13H6z" />
           <path d="M9 9h6M9 12h6M9 15h4" />
           <circle cx="17.5" cy="7" r="1.5" />
+        </>
+      );
+      break;
+    case "github":
+      shape = (
+        <>
+          <path d="M12 3.5c-4.7 0-8.5 3.8-8.5 8.5 0 3.8 2.4 6.9 5.8 8.1.4.1.6-.2.6-.4v-1.5c-2.4.5-2.9-1.1-2.9-1.1-.4-.9-.9-1.2-.9-1.2-.8-.5.1-.5.1-.5.8.1 1.3.9 1.3.9.7 1.3 2 1 2.5.7.1-.5.3-.9.5-1.1-1.9-.2-3.9-1-3.9-4.3 0-.9.3-1.7.9-2.3-.1-.2-.4-1.1.1-2.3 0 0 .7-.2 2.3.9a7.8 7.8 0 0 1 4.2 0c1.6-1.1 2.3-.9 2.3-.9.5 1.2.2 2.1.1 2.3.6.6.9 1.4.9 2.3 0 3.3-2 4.1-3.9 4.3.3.3.6.8.6 1.6v2.4c0 .2.2.5.6.4 3.4-1.2 5.8-4.3 5.8-8.1 0-4.7-3.8-8.5-8.5-8.5Z" />
         </>
       );
       break;

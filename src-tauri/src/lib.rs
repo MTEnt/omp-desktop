@@ -4,6 +4,7 @@ mod error;
 mod memory;
 mod git_status;
 mod image_attach;
+mod github;
 mod project_fs;
 mod omp_config;
 mod omp_context;
@@ -98,6 +99,7 @@ pub fn run() {
             commands::list_project_dir,
             commands::read_project_file,
             commands::get_catalog,
+            commands::get_github_snapshot,
         ])
         .run(tauri::generate_context!())
         .unwrap_or_else(|error| eprintln!("OMP Desktop runtime error: {error}"));

@@ -49,6 +49,37 @@ export interface CatalogSnapshot {
   notes: string[];
 }
 
+export interface GhRepo {
+  nameWithOwner: string;
+  description?: string | null;
+  url: string;
+}
+
+export interface GhIssue {
+  number: number;
+  title: string;
+  state: string;
+  url: string;
+  author?: string | null;
+}
+
+export interface GhPr {
+  number: number;
+  title: string;
+  state: string;
+  url: string;
+  isDraft: boolean;
+  author?: string | null;
+}
+
+export interface GithubSnapshot {
+  available: boolean;
+  error?: string | null;
+  repo?: GhRepo | null;
+  issues: GhIssue[];
+  prs: GhPr[];
+}
+
 export interface SshHostInfo {
   name: string;
   host: string;

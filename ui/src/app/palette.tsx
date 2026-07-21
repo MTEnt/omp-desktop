@@ -40,6 +40,7 @@ const panelActions: Array<{ id: PanelId; label: string }> = [
   { id: "scratchpad", label: "Scratchpad" },
   { id: "launch", label: "Launch" },
   { id: "catalog", label: "Catalog" },
+  { id: "github", label: "GitHub" },
   { id: "settings", label: "Settings" },
   { id: "terminal", label: "Terminal" },
 ];
@@ -234,6 +235,14 @@ export const CommandPalette = ({ open, onOpenChange }: CommandPaletteProps) => {
         detail: "Browse MCP servers, agents, skills, and slash commands",
         keywords: "mcp agents skills commands catalog inventory",
         run: () => openDrawer("catalog"),
+      },
+      {
+        id: "open-github-panel",
+        group: "Launch",
+        label: "Open GitHub panel",
+        detail: "Browse repository issues and pull requests via gh",
+        keywords: "github issues prs pull requests gh",
+        run: () => openDrawer("github"),
       },
       {
         id: "open-settings",

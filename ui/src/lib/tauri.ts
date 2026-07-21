@@ -15,6 +15,7 @@ import type {
   SshRecent,
   SkillInfo,
   CatalogSnapshot,
+  GithubSnapshot,
   RemoteDirListing,
   JobCard,
   ModelRolesSnapshot,
@@ -54,6 +55,9 @@ export const api = {
 
   getCatalog: (cwd?: string | null) =>
     invoke<CatalogSnapshot>("get_catalog", { cwd: cwd ?? null }),
+
+  getGithubSnapshot: (cwd: string) =>
+    invoke<GithubSnapshot>("get_github_snapshot", { cwd }),
 
   listProjectDir: (root: string, path?: string | null) =>
     invoke<DirEntryDto[]>("list_project_dir", {

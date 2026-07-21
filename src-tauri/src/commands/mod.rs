@@ -1,5 +1,6 @@
 use crate::error::AppError;
 use crate::catalog::{self, CatalogSnapshot};
+use crate::github::{self, GithubSnapshot};
 use crate::git_status::{self, GitStatus};
 use crate::project_fs::{self, DirEntryDto, DEFAULT_MAX_BYTES};
 use crate::image_attach::{images_to_rpc_value, prepare_from_raw_inputs, PreparedImage, RawImageInput};
@@ -1067,6 +1068,15 @@ pub async fn get_catalog(cwd: Option<String>) -> CatalogSnapshot {
         skills: Vec::new(),
         notes: vec![format!("catalog task failed: {error}")],
     })
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub async fn get_github_snapshot(cwd: String) -> GithubSnapshot {
+    // Path containment: only operate on the provided session cwd via `gh -C`.
+    // Never chdir the process. Failures degrade to GithubSnapshot.error.
+    // Never surface tokens — github::load_github_snapshot sanitizes CLI errors.
+    let path = PathBuf::from(cwd.trim());
+    github::load_github_snapshot(&path).await
 }
 
 #[cfg(test)]
