@@ -4,6 +4,13 @@ use serde_json::{Map, Value};
 use std::fs;
 use std::path::{Path, PathBuf};
 
+#[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum ModelRoleScope {
+    Global,
+    Project,
+}
+
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct ModelRoleAssignment {
@@ -13,12 +20,14 @@ pub struct ModelRoleAssignment {
     pub model_id: Option<String>,
     pub thinking: Option<String>,
     pub short_label: String,
+    pub source: ModelRoleScope,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct ModelRolesSnapshot {
     pub config_path: Option<String>,
+    pub scope: ModelRoleScope,
     pub roles: Vec<ModelRoleAssignment>,
 }
 
@@ -119,7 +128,11 @@ fn sort_roles(roles: &mut [ModelRoleAssignment]) {
     });
 }
 
-fn assignment_from_selector(role: &str, selector: &str) -> ModelRoleAssignment {
+fn assignment_from_selector(
+    role: &str,
+    selector: &str,
+    source: ModelRoleScope,
+) -> ModelRoleAssignment {
     let (provider, model_id, thinking) = parse_selector(selector);
     ModelRoleAssignment {
         role: role.to_string(),
@@ -128,16 +141,73 @@ fn assignment_from_selector(role: &str, selector: &str) -> ModelRoleAssignment {
         model_id,
         thinking,
         short_label: short_label(selector),
+        source,
     }
 }
 
-fn assignments_from_map(map: &Map<String, Value>) -> Vec<ModelRoleAssignment> {
+fn assignments_from_map(
+    map: &Map<String, Value>,
+    source: ModelRoleScope,
+) -> Vec<ModelRoleAssignment> {
     let mut roles = Vec::new();
     for (role, value) in map {
         let Some(selector) = value.as_str().map(str::trim).filter(|s| !s.is_empty()) else {
             continue;
         };
-        roles.push(assignment_from_selector(role, selector));
+        roles.push(assignment_from_selector(role, selector, source));
+    }
+    sort_roles(&mut roles);
+    roles
+}
+
+fn model_roles_map(value: &Value) -> Option<&Map<String, Value>> {
+    value
+        .get("modelRoles")
+        .and_then(Value::as_object)
+        .or_else(|| value.get("model_roles").and_then(Value::as_object))
+}
+
+fn uses_project_role_storage(value: &Value) -> bool {
+    value
+        .get("modelRoleStorage")
+        .or_else(|| value.get("model_role_storage"))
+        .and_then(Value::as_str)
+        .is_some_and(|scope| scope.eq_ignore_ascii_case("project"))
+}
+
+fn project_config_path(cwd: &Path) -> PathBuf {
+    let dir = cwd.join(".omp");
+    config_candidates(&dir)
+        .into_iter()
+        .find(|candidate| candidate.is_file())
+        .unwrap_or_else(|| dir.join("config.yml"))
+}
+
+fn role_target(global_config: &Value, cwd: Option<&Path>) -> (ModelRoleScope, PathBuf) {
+    if uses_project_role_storage(global_config) {
+        if let Some(cwd) = cwd {
+            return (ModelRoleScope::Project, project_config_path(cwd));
+        }
+    }
+    (ModelRoleScope::Global, resolve_config_path())
+}
+
+fn merge_model_roles(
+    global_config: &Value,
+    project_config: Option<&Value>,
+) -> Vec<ModelRoleAssignment> {
+    let mut roles = model_roles_map(global_config)
+        .map(|map| assignments_from_map(map, ModelRoleScope::Global))
+        .unwrap_or_default();
+
+    if let Some(project_roles) = project_config.and_then(model_roles_map) {
+        for assignment in assignments_from_map(project_roles, ModelRoleScope::Project) {
+            if let Some(existing) = roles.iter_mut().find(|role| role.role == assignment.role) {
+                *existing = assignment;
+            } else {
+                roles.push(assignment);
+            }
+        }
     }
     sort_roles(&mut roles);
     roles
@@ -155,32 +225,32 @@ fn load_config_value(path: &Path) -> AppResult<Value> {
         .map_err(|error| AppError::Msg(format!("failed to parse {}: {error}", path.display())))
 }
 
-pub fn load_model_roles() -> AppResult<ModelRolesSnapshot> {
-    let path = resolve_config_path();
-    if !path.exists() {
-        return Ok(ModelRolesSnapshot {
-            config_path: None,
-            roles: Vec::new(),
-        });
-    }
-
-    let value = load_config_value(&path)?;
-    let mut roles = Vec::new();
-    if let Some(map) = value
-        .get("modelRoles")
-        .and_then(Value::as_object)
-        .or_else(|| value.get("model_roles").and_then(Value::as_object))
-    {
-        roles = assignments_from_map(map);
-    }
+pub fn load_model_roles_for(cwd: Option<&Path>) -> AppResult<ModelRolesSnapshot> {
+    let global_path = resolve_config_path();
+    let global_config = load_config_value(&global_path)?;
+    let project_path = cwd.map(project_config_path);
+    let project_config = match project_path.as_deref() {
+        Some(path) if path.is_file() => Some(load_config_value(path)?),
+        _ => None,
+    };
+    let (scope, target_path) = role_target(&global_config, cwd);
+    let config_path = target_path
+        .is_file()
+        .then(|| target_path.display().to_string());
+    let roles = merge_model_roles(&global_config, project_config.as_ref());
 
     Ok(ModelRolesSnapshot {
-        config_path: Some(path.display().to_string()),
+        config_path,
+        scope,
         roles,
     })
 }
 
-pub fn set_model_role(role: &str, selector: &str) -> AppResult<ModelRolesSnapshot> {
+pub fn set_model_role_for(
+    role: &str,
+    selector: &str,
+    cwd: Option<&Path>,
+) -> AppResult<ModelRolesSnapshot> {
     let role = role.trim();
     let selector = selector.trim();
     if role.is_empty() {
@@ -190,7 +260,8 @@ pub fn set_model_role(role: &str, selector: &str) -> AppResult<ModelRolesSnapsho
         return Err(AppError::Msg("model selector cannot be empty".into()));
     }
 
-    let path = resolve_config_path();
+    let global_config = load_config_value(&resolve_config_path())?;
+    let (_, path) = role_target(&global_config, cwd);
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
@@ -215,7 +286,7 @@ pub fn set_model_role(role: &str, selector: &str) -> AppResult<ModelRolesSnapsho
         .map_err(|error| AppError::Msg(format!("failed to serialize OMP config: {error}")))?;
     fs::write(&path, serialized)?;
 
-    load_model_roles()
+    load_model_roles_for(cwd)
 }
 
 pub fn parse_available_models_response(response: &Value) -> Vec<AvailableModel> {
@@ -291,6 +362,7 @@ pub fn parse_available_models_response(response: &Value) -> Vec<AvailableModel> 
 mod tests {
     use super::*;
     use std::time::{SystemTime, UNIX_EPOCH};
+    static ENV_LOCK: parking_lot::Mutex<()> = parking_lot::Mutex::new(());
 
     #[test]
     fn parses_provider_model_thinking_selector() {
@@ -302,6 +374,7 @@ mod tests {
 
     #[test]
     fn set_model_role_updates_yaml() {
+        let _env = ENV_LOCK.lock();
         let stamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
@@ -317,7 +390,7 @@ mod tests {
         unsafe {
             std::env::set_var("OMP_AGENT_DIR", &dir);
         }
-        let snapshot = set_model_role("default", "xai-oauth/grok-4.5:xhigh").unwrap();
+        let snapshot = set_model_role_for("default", "xai-oauth/grok-4.5:xhigh", None).unwrap();
         unsafe {
             std::env::remove_var("OMP_AGENT_DIR");
         }
@@ -335,6 +408,62 @@ mod tests {
         assert!(raw.contains("xai-oauth/grok-4.5:xhigh"));
         assert!(raw.contains("keep/me:low"));
         let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn project_role_storage_merges_and_updates_project_config() {
+        let _env = ENV_LOCK.lock();
+        let stamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!("omp-desktop-roles-project-{stamp}"));
+        let agent_dir = root.join("agent");
+        let project_dir = root.join("project");
+        fs::create_dir_all(project_dir.join(".omp")).unwrap();
+        fs::create_dir_all(&agent_dir).unwrap();
+        fs::write(
+            agent_dir.join("config.yml"),
+            "modelRoleStorage: project\nmodelRoles:\n  default: global/default:high\n  smol: global/smol:low\n",
+        )
+        .unwrap();
+        fs::write(
+            project_dir.join(".omp/config.yml"),
+            "modelRoles:\n  default: project/default:max\n",
+        )
+        .unwrap();
+
+        unsafe {
+            std::env::set_var("OMP_AGENT_DIR", &agent_dir);
+        }
+        let snapshot = load_model_roles_for(Some(&project_dir)).unwrap();
+        let updated =
+            set_model_role_for("smol", "project/smol:medium", Some(&project_dir)).unwrap();
+        unsafe {
+            std::env::remove_var("OMP_AGENT_DIR");
+        }
+
+        assert_eq!(snapshot.scope, ModelRoleScope::Project);
+        assert!(snapshot.roles.iter().any(|role| {
+            role.role == "default"
+                && role.selector == "project/default:max"
+                && role.source == ModelRoleScope::Project
+        }));
+        assert!(snapshot.roles.iter().any(|role| {
+            role.role == "smol"
+                && role.selector == "global/smol:low"
+                && role.source == ModelRoleScope::Global
+        }));
+        assert!(updated.roles.iter().any(|role| {
+            role.role == "smol"
+                && role.selector == "project/smol:medium"
+                && role.source == ModelRoleScope::Project
+        }));
+        let global = fs::read_to_string(agent_dir.join("config.yml")).unwrap();
+        let project = fs::read_to_string(project_dir.join(".omp/config.yml")).unwrap();
+        assert!(!global.contains("project/smol:medium"));
+        assert!(project.contains("project/smol:medium"));
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

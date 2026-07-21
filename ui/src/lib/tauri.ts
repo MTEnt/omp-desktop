@@ -51,10 +51,15 @@ export const api = {
 
   installImpeccable: () => invoke<SetupStatus>("install_impeccable"),
 
-  getModelRoles: () => invoke<ModelRolesSnapshot>("get_model_roles"),
+  getModelRoles: (cwd?: string | null) =>
+    invoke<ModelRolesSnapshot>("get_model_roles", { cwd: cwd ?? null }),
 
-  setModelRole: (role: string, selector: string) =>
-    invoke<ModelRolesSnapshot>("set_model_role", { role, selector }),
+  setModelRole: (role: string, selector: string, cwd?: string | null) =>
+    invoke<ModelRolesSnapshot>("set_model_role", {
+      role,
+      selector,
+      cwd: cwd ?? null,
+    }),
 
   listAvailableModels: () => invoke<AvailableModel[]>("list_available_models"),
 

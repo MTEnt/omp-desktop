@@ -56,6 +56,8 @@ const emptyStatus = (): SetupStatus => ({
   ompFound: false,
   ompPath: null,
   ompVersion: null,
+  ompSupported: false,
+  minimumOmpVersion: "17.0.6",
   impeccableSkillPresent: false,
   impeccableSkillPath: null,
   impeccableRulesPresent: false,
@@ -189,7 +191,16 @@ export const OnboardingWalkthrough = () => {
           ompBinary: ompBinary.trim() || null,
           approvalMode,
         });
-        await refreshStatus();
+        const nextStatus = await api.getSetupStatus();
+        setStatus(nextStatus);
+        if (!nextStatus.ompFound) {
+          throw new Error("OMP was not found. Install it or set the binary path before continuing.");
+        }
+        if (!nextStatus.ompSupported) {
+          throw new Error(
+            `Update OMP to ${nextStatus.minimumOmpVersion} or newer before continuing.`,
+          );
+        }
       } catch (err) {
         setError(err instanceof Error ? err.message : String(err));
         setBusy(false);
@@ -267,14 +278,24 @@ export const OnboardingWalkthrough = () => {
             <div className="onboard-panel">
               <div className="onboard-status-row">
                 {statusChip(
-                  !!status?.ompFound,
-                  status?.ompFound
-                    ? `OMP ready${status.ompVersion ? ` · ${status.ompVersion}` : ""}`
-                    : "OMP not found on PATH",
+                  !!status?.ompFound && !!status?.ompSupported,
+                  !status?.ompFound
+                    ? "OMP not found on PATH"
+                    : status.ompSupported
+                      ? `OMP ready${status.ompVersion ? ` · ${status.ompVersion}` : ""}`
+                      : `OMP update required${status.ompVersion ? ` · ${status.ompVersion}` : ""}`,
                 )}
               </div>
               {status?.ompPath ? (
-                <p className="onboard-muted">Detected: {status.ompPath}</p>
+                <>
+                  <p className="onboard-muted">Detected: {status.ompPath}</p>
+                  {!status.ompSupported ? (
+                    <p className="onboard-note">
+                      OMP Desktop requires {status.minimumOmpVersion} or newer. Update the global
+                      package, then recheck.
+                    </p>
+                  ) : null}
+                </>
               ) : (
                 <p className="onboard-muted">
                   Install OMP globally (`npm/bun install -g @oh-my-pi/pi-coding-agent` or your usual path), then refresh.
@@ -381,8 +402,17 @@ export const OnboardingWalkthrough = () => {
           {stepId === "ready" && (
             <div className="onboard-panel">
               <ul className="onboard-checklist">
-                <li className={status?.ompFound ? "is-ok" : "is-warn"}>
-                  OMP runtime {status?.ompFound ? "ready" : "missing — set path in Settings"}
+                <li
+                  className={
+                    status?.ompFound && status.ompSupported ? "is-ok" : "is-warn"
+                  }
+                >
+                  OMP runtime{" "}
+                  {!status?.ompFound
+                    ? "missing — set path in Settings"
+                    : status.ompSupported
+                      ? "ready"
+                      : `outdated — ${status.minimumOmpVersion}+ required`}
                 </li>
                 <li className={status?.impeccableSkillPresent ? "is-ok" : "is-warn"}>
                   Impeccable {status?.impeccableSkillPresent ? "enabled" : "not installed (optional)"}

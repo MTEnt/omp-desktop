@@ -4,6 +4,15 @@ use std::ffi::{OsStr, OsString};
 use std::fs;
 use std::path::{Path, PathBuf};
 
+pub const MINIMUM_OMP_VERSION: [u64; 3] = [17, 0, 6];
+pub const MINIMUM_OMP_VERSION_LABEL: &str = "17.0.6";
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OmpRuntimeVersion {
+    pub display: String,
+    pub components: [u64; 3],
+}
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub enum ApprovalMode {
@@ -214,6 +223,82 @@ pub fn runtime_command_path(binary: &Path) -> Option<OsString> {
     )
 }
 
+pub fn parse_omp_version(text: &str) -> Option<[u64; 3]> {
+    text.split(|character: char| !(character.is_ascii_digit() || character == '.'))
+        .find_map(|candidate| {
+            let mut parts = candidate.split('.');
+            let major = parts.next()?.parse().ok()?;
+            let minor = parts.next()?.parse().ok()?;
+            let patch = parts.next()?.parse().ok()?;
+            if parts.next().is_some() {
+                return None;
+            }
+            Some([major, minor, patch])
+        })
+}
+
+pub fn is_supported_omp_version(version: [u64; 3]) -> bool {
+    version >= MINIMUM_OMP_VERSION
+}
+
+pub async fn inspect_omp_runtime(binary: &Path) -> AppResult<OmpRuntimeVersion> {
+    let mut command = tokio::process::Command::new(binary);
+    command.arg("--version").kill_on_drop(true);
+    if let Some(path) = runtime_command_path(binary) {
+        command.env("PATH", path);
+    }
+    let output = tokio::time::timeout(std::time::Duration::from_secs(10), command.output())
+        .await
+        .map_err(|_| {
+            AppError::Msg(format!(
+                "timed out checking OMP runtime at {}",
+                binary.display()
+            ))
+        })??;
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let display = stdout
+        .lines()
+        .chain(stderr.lines())
+        .map(str::trim)
+        .find(|line| !line.is_empty())
+        .unwrap_or_default()
+        .to_string();
+    if !output.status.success() {
+        return Err(AppError::Msg(format!(
+            "failed checking OMP runtime at {}{}",
+            binary.display(),
+            if display.is_empty() {
+                String::new()
+            } else {
+                format!(": {display}")
+            }
+        )));
+    }
+    let components = parse_omp_version(&display).ok_or_else(|| {
+        AppError::Msg(format!(
+            "unable to parse OMP version from {:?} at {}",
+            display,
+            binary.display()
+        ))
+    })?;
+    Ok(OmpRuntimeVersion {
+        display,
+        components,
+    })
+}
+
+pub async fn require_supported_omp_runtime(binary: &Path) -> AppResult<OmpRuntimeVersion> {
+    let runtime = inspect_omp_runtime(binary).await?;
+    if is_supported_omp_version(runtime.components) {
+        return Ok(runtime);
+    }
+    Err(AppError::Msg(format!(
+        "{} is outdated; OMP Desktop requires OMP {} or newer",
+        runtime.display, MINIMUM_OMP_VERSION_LABEL
+    )))
+}
+
 fn runtime_command_path_for(
     binary: &Path,
     home: Option<&Path>,
@@ -312,6 +397,16 @@ mod tests {
     fn default_requires_approval_for_command_execution() {
         assert_eq!(AppSettings::default().approval_mode, ApprovalMode::Write);
         assert_eq!(ApprovalMode::Write.as_cli_value(), "write");
+    }
+
+    #[test]
+    fn parses_and_gates_supported_omp_versions() {
+        assert_eq!(parse_omp_version("omp/17.0.6"), Some([17, 0, 6]));
+        assert_eq!(parse_omp_version("omp v18.2.1\n"), Some([18, 2, 1]));
+        assert_eq!(parse_omp_version("not a version"), None);
+        assert!(is_supported_omp_version([17, 0, 6]));
+        assert!(is_supported_omp_version([18, 0, 0]));
+        assert!(!is_supported_omp_version([17, 0, 5]));
     }
 
     #[test]

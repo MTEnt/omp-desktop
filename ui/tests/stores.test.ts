@@ -25,6 +25,9 @@ beforeEach(() => {
         status: "ready",
       },
     ],
+    modelRoles: [],
+    modelRolesConfigPath: null,
+    modelRoleScope: "global",
     activeSessionId: "session-1",
     transcripts: {},
     activity: {},
@@ -244,6 +247,58 @@ describe("session event reducer", () => {
     store.markExited("session-1");
     assert.equal(useSessionStore.getState().sessions[0]?.status, "exited");
     assert.equal(useSessionStore.getState().streaming["session-1"], false);
+  });
+
+  it("keeps streaming through an agent_end that will continue", async () => {
+    const originalGetState = api.getState;
+    const originalHousekeeping = api.postTurnHousekeeping;
+    let refreshes = 0;
+    let housekeepingRuns = 0;
+    api.getState = async () => {
+      refreshes += 1;
+      return {};
+    };
+    api.postTurnHousekeeping = async () => {
+      housekeepingRuns += 1;
+    };
+
+    try {
+      const store = useSessionStore.getState();
+      store.applyOmpEvent("session-1", { type: "agent_start" });
+      store.applyOmpEvent("session-1", {
+        type: "agent_end",
+        willContinue: true,
+        messages: [],
+        messageCount: 1,
+      });
+      await Promise.resolve();
+      await Promise.resolve();
+    } finally {
+      api.getState = originalGetState;
+      api.postTurnHousekeeping = originalHousekeeping;
+    }
+
+    assert.equal(useSessionStore.getState().streaming["session-1"], true);
+    assert.equal(refreshes, 0);
+    assert.equal(housekeepingRuns, 0);
+  });
+
+  it("surfaces RPC transport error frames", () => {
+    useSessionStore.getState().applyOmpEvent("session-1", {
+      type: "rpc_frame_error",
+      originalType: "agent_end",
+      error: "RPC frame exceeded the transport limit",
+    });
+
+    const state = useSessionStore.getState();
+    assert.equal(
+      state.error,
+      "OMP RPC transport error: RPC frame exceeded the transport limit",
+    );
+    assert.deepEqual(
+      state.activity["session-1"].map((item) => item.text),
+      ["RPC transport error · agent_end"],
+    );
   });
   it("queues extension UI approvals and returns the selected response", async () => {
     const originalRespond = api.respondExtensionUi;
@@ -514,6 +569,156 @@ describe("session commands", () => {
         progress: "Tracing state",
       },
     ]);
+  });
+
+  it("projects current subagent lifecycle and progress frames", () => {
+    const apply = useSessionStore.getState().applyOmpEvent;
+    apply("session-1", {
+      type: "subagent_lifecycle",
+      payload: {
+        id: "agent-7",
+        agent: "code-reviewer",
+        status: "started",
+        index: 0,
+      },
+    });
+    apply("session-1", {
+      type: "subagent_progress",
+      payload: {
+        agent: "code-reviewer",
+        task: "Review compatibility patch",
+        progress: {
+          id: "agent-7",
+          status: "running",
+          lastIntent: "Tracing RPC events",
+        },
+      },
+    });
+    apply("session-1", {
+      type: "subagent_lifecycle",
+      payload: {
+        id: "agent-7",
+        agent: "code-reviewer",
+        status: "completed",
+        index: 0,
+      },
+    });
+
+    assert.deepEqual(useSessionStore.getState().subagents["session-1"], [
+      {
+        id: "agent-7",
+        name: "code-reviewer",
+        status: "completed",
+        progress: "Tracing RPC events",
+      },
+    ]);
+  });
+
+  it("projects current session status events", () => {
+    useSessionStore.setState({
+      states: {
+        "session-1": {
+          thinkingLevel: "low",
+          isCompacting: false,
+        },
+      },
+    });
+    const apply = useSessionStore.getState().applyOmpEvent;
+    apply("session-1", {
+      type: "thinking_level_changed",
+      thinkingLevel: "xhigh",
+    });
+    apply("session-1", {
+      type: "auto_compaction_start",
+      action: "shake",
+      reason: "threshold",
+    });
+    apply("session-1", {
+      type: "notice",
+      level: "warning",
+      message: "Provider is approaching its quota.",
+    });
+
+    let state = useSessionStore.getState();
+    assert.deepEqual(state.states["session-1"], {
+      thinkingLevel: "xhigh",
+      isCompacting: true,
+    });
+    assert.equal(
+      state.activity["session-1"].at(-1)?.text,
+      "Provider is approaching its quota.",
+    );
+
+    apply("session-1", {
+      type: "auto_compaction_end",
+      action: "shake",
+      aborted: false,
+      willRetry: false,
+    });
+    state = useSessionStore.getState();
+    assert.equal(
+      (state.states["session-1"] as { isCompacting?: boolean }).isCompacting,
+      false,
+    );
+  });
+
+  it("loads and updates model roles in the active project scope", async () => {
+    const originalGetModelRoles = api.getModelRoles;
+    const originalSetModelRole = api.setModelRole;
+    const requests: unknown[] = [];
+    api.getModelRoles = async (cwd) => {
+      requests.push({ command: "get", cwd });
+      return {
+        configPath: "/tmp/omp-desktop/.omp/config.yml",
+        scope: "project",
+        roles: [
+          {
+            role: "default",
+            selector: "anthropic/claude-opus:high",
+            shortLabel: "anthropic/claude-opus:high",
+            source: "project",
+          },
+        ],
+      };
+    };
+    api.setModelRole = async (role, selector, cwd) => {
+      requests.push({ command: "set", role, selector, cwd });
+      return {
+        configPath: "/tmp/omp-desktop/.omp/config.yml",
+        scope: "project",
+        roles: [
+          {
+            role,
+            selector,
+            shortLabel: selector,
+            source: "project",
+          },
+        ],
+      };
+    };
+
+    try {
+      await useSessionStore.getState().loadModelRoles();
+      await useSessionStore
+        .getState()
+        .setModelRole("default", "openai-codex/gpt-5.6:high");
+    } finally {
+      api.getModelRoles = originalGetModelRoles;
+      api.setModelRole = originalSetModelRole;
+    }
+
+    assert.deepEqual(requests, [
+      { command: "get", cwd: "/tmp/omp-desktop" },
+      {
+        command: "set",
+        role: "default",
+        selector: "openai-codex/gpt-5.6:high",
+        cwd: "/tmp/omp-desktop",
+      },
+    ]);
+    const state = useSessionStore.getState();
+    assert.equal(state.modelRoleScope, "project");
+    assert.equal(state.modelRoles[0]?.source, "project");
   });
 
   it("saves settings and keeps the live store in sync", async () => {

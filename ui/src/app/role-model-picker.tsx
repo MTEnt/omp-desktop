@@ -2,7 +2,11 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import { useLayoutStore } from "./layout-store.ts";
 import { PRIMARY_MODEL_ROLES, useSessionStore } from "../session/session-store.ts";
-import type { AvailableModel, ModelRoleAssignment } from "../session/types.ts";
+import type {
+  AvailableModel,
+  ModelRoleAssignment,
+  ModelRoleScope,
+} from "../session/types.ts";
 
 const FALLBACK_THINKING = ["off", "low", "medium", "high"] as const;
 
@@ -35,8 +39,10 @@ const thinkingOptionsFor = (model: AvailableModel): string[] => {
 
 const DefaultRolePicker = ({
   assignment,
+  scope,
 }: {
   assignment: ModelRoleAssignment;
+  scope: ModelRoleScope;
 }) => {
   const setModelRole = useSessionStore((state) => state.setModelRole);
   const availableModels = useSessionStore((state) => state.availableModels);
@@ -114,6 +120,7 @@ const DefaultRolePicker = ({
   const unset = !assignment.selector;
   const label = chipModelLabel(assignment);
   const full = assignment.selector?.trim() || "choose a model";
+  const sourceHint = assignment.source ? ` · ${assignment.source} override` : "";
 
   const choose = async (model: AvailableModel) => {
     const efforts = thinkingOptionsFor(model);
@@ -152,7 +159,7 @@ const DefaultRolePicker = ({
       <button
         type="button"
         className={`role-chip role-chip--button${unset ? " is-unset" : ""}`}
-        title={`default: ${full}`}
+        title={`default: ${full}${sourceHint}`}
         aria-haspopup="listbox"
         aria-expanded={open}
         onClick={() => setOpen((value) => !value)}
@@ -202,6 +209,7 @@ const DefaultRolePicker = ({
               ? `${providers.length} providers · ${availableModels.length} models`
               : "Loading authenticated models…"}
             {saving ? " · saving…" : ""}
+            {` · saves to ${scope}`}
           </div>
 
           <div className="role-picker__list">
@@ -251,6 +259,7 @@ const DefaultRolePicker = ({
 
 export const RoleModelStrip = () => {
   const modelRoles = useSessionStore((state) => state.modelRoles);
+  const modelRoleScope = useSessionStore((state) => state.modelRoleScope);
   const openDrawer = useLayoutStore((state) => state.openDrawer);
   const setAgentsFocusRole = useLayoutStore((state) => state.setAgentsFocusRole);
 
@@ -291,18 +300,25 @@ export const RoleModelStrip = () => {
     <div className="runtime-strip__roles" aria-label="OMP model roles">
       {roles.map((role) => {
         if (role.role === "default") {
-          return <DefaultRolePicker key={role.role} assignment={role} />;
+          return (
+            <DefaultRolePicker
+              key={role.role}
+              assignment={role}
+              scope={modelRoleScope}
+            />
+          );
         }
 
         const unset = !role.selector;
         const label = chipModelLabel(role);
         const full = role.selector?.trim() || "configure in Agents";
+        const sourceHint = role.source ? ` · ${role.source} override` : "";
         return (
           <button
             key={role.role}
             type="button"
             className={`role-chip${unset ? " is-unset" : ""}`}
-            title={`${role.role}: ${full}`}
+            title={`${role.role}: ${full}${sourceHint}`}
             onClick={() => openAgents(role.role)}
           >
             <span className="role-chip__role">{role.role}</span>

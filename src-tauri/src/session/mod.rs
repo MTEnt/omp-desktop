@@ -1,7 +1,7 @@
 use crate::error::{AppError, AppResult};
 use crate::memory;
 use crate::rpc::RpcClient;
-use crate::settings::{AppSettings, ApprovalMode};
+use crate::settings::{self, AppSettings, ApprovalMode};
 use crate::ssh::{self, RemoteSessionInfo, RemoteTarget};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
@@ -118,6 +118,7 @@ impl SessionManager {
         resume: Option<String>,
         remote: Option<RemoteTarget>,
     ) -> AppResult<SessionInfo> {
+        settings::require_supported_omp_runtime(&self.omp_bin).await?;
         let id = Uuid::new_v4().to_string();
         let mut session_cwd = cwd;
         let mut artifacts = SessionArtifacts::default();
@@ -433,6 +434,10 @@ mod tests {
         fs::write(
             &path,
             r#"#!/usr/bin/env node
+if (process.argv.includes("--version")) {
+  process.stdout.write("omp/17.0.6\n");
+  process.exit(0);
+}
 const readline = require("readline");
 const send = (frame) => process.stdout.write(JSON.stringify(frame) + "\n");
 send({ type: "ready", argv: process.argv.slice(2) });
@@ -447,6 +452,27 @@ input.on("line", (line) => {
     data: command
   });
 });
+"#,
+        )
+        .unwrap();
+        let mut permissions = fs::metadata(&path).unwrap().permissions();
+        permissions.set_mode(0o755);
+        fs::set_permissions(&path, permissions).unwrap();
+        path
+    }
+
+    #[cfg(unix)]
+    fn outdated_mock_omp(root: &Path) -> PathBuf {
+        let path = root.join("outdated-omp");
+        fs::write(
+            &path,
+            r#"#!/usr/bin/env node
+if (process.argv.includes("--version")) {
+  process.stdout.write("omp/17.0.5\n");
+  process.exit(0);
+}
+process.stdout.write('{"type":"ready"}\n');
+process.stdin.resume();
 "#,
         )
         .unwrap();
@@ -533,6 +559,27 @@ input.on("line", (line) => {
         assert!(manager.take_events(&info.id).is_none());
         assert!(manager.get_state(&info.id).await.is_err());
 
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn manager_rejects_outdated_omp_runtime() {
+        let root = temp_dir();
+        let cwd = root.join("my-project");
+        fs::create_dir(&cwd).unwrap();
+        let omp_bin = outdated_mock_omp(&root);
+        let mut manager = SessionManager::new(AppSettings::default(), omp_bin);
+
+        let error = manager
+            .create_session(cwd, None, None)
+            .await
+            .expect_err("OMP 17.0.5 should be rejected");
+
+        assert!(error
+            .to_string()
+            .contains("OMP Desktop requires OMP 17.0.6 or newer"));
+        assert!(manager.list().is_empty());
         fs::remove_dir_all(root).unwrap();
     }
 }
