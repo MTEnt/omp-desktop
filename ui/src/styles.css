@@ -3855,3 +3855,145 @@ button:disabled {
     flex-direction: column;
   }
 }
+
+.settings-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.settings-section {
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+}
+
+.settings-section + .settings-section {
+  padding-top: 14px;
+  border-top: 1px solid var(--line-soft);
+}
+
+.settings-section__head .eyebrow {
+  margin-bottom: 6px;
+}
+
+.settings-section__blurb {
+  margin: 0;
+  color: #737c88;
+  font-size: 10px;
+  line-height: 1.45;
+}
+
+.settings-section__blurb code {
+  color: var(--accent);
+  font-family: "SFMono-Regular", Menlo, monospace;
+  font-size: 9px;
+}
+
+.settings-section__note {
+  margin: 0;
+  color: #7d9567;
+  font-size: 9px;
+  line-height: 1.45;
+}
+
+.settings-section__error {
+  white-space: pre-wrap;
+}
+
+.settings-list {
+  display: flex;
+  flex-direction: column;
+  max-height: min(320px, 42vh);
+  overflow: auto;
+  margin: 0 -2px;
+  padding: 0 2px;
+}
+
+.settings-list__row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  padding: 9px 4px;
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.settings-list__row--stack {
+  grid-template-columns: 1fr;
+  gap: 7px;
+}
+
+.settings-list__copy {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px 8px;
+}
+
+.settings-list__title {
+  color: #c3c9d2;
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.settings-list__id {
+  color: #69727e;
+  font-family: "SFMono-Regular", Menlo, monospace;
+  font-size: 7px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.settings-list__status {
+  margin-left: auto;
+  color: #4f5864;
+  font-family: "SFMono-Regular", Menlo, monospace;
+  font-size: 7px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.settings-list__status.is-set {
+  color: #7d9567;
+}
+
+.settings-list__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.settings-list__empty {
+  margin: 0;
+  padding: 10px 4px;
+  color: #626b77;
+  font-size: 10px;
+}
+
+.settings-keys__input-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 6px;
+}
+
+.settings-keys__input-row input {
+  width: 100%;
+  min-width: 0;
+  height: 31px;
+  padding: 0 9px;
+  border: 1px solid #303741;
+  border-radius: 5px;
+  color: #d0d5dc;
+  background: #101318;
+  font-size: 10px;
+}
+
+.settings-keys__input-row input::placeholder {
+  color: #4f5864;
+}
+
+.settings-keys__input-row input:disabled {
+  opacity: 0.55;
+}

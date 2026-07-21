@@ -1,6 +1,8 @@
+use crate::auth_broker::{self, LoginProvider};
 use crate::error::AppError;
 use crate::memory::{self, JobCard, MemoryStore, PersistentAgent, RoleMemoryNote, RoleScratchpad};
 use crate::omp_config::{self, AvailableModel, ModelRolesSnapshot};
+use crate::provider_keys::{self, ProviderKeyStatus, ProviderKeyUpdate};
 use crate::pty::{PtyManager, PtyOutput};
 use crate::session::{SessionInfo, SessionManager};
 use crate::session_history;
@@ -164,6 +166,47 @@ pub async fn list_available_models(
 pub async fn get_settings(state: State<'_, AppState>) -> Result<AppSettings, AppError> {
     Ok(state.settings.lock().await.clone())
 }
+
+#[tauri::command(rename_all = "camelCase")]
+pub async fn get_provider_keys() -> Result<Vec<ProviderKeyStatus>, AppError> {
+    let path = provider_keys::agent_env_path()?;
+    provider_keys::list_provider_keys(&path)
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub async fn save_provider_keys(
+    updates: Vec<ProviderKeyUpdate>,
+) -> Result<Vec<ProviderKeyStatus>, AppError> {
+    let path = provider_keys::agent_env_path()?;
+    provider_keys::save_provider_keys(&path, &updates)
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub async fn list_login_providers(
+    state: State<'_, AppState>,
+) -> Result<Vec<LoginProvider>, AppError> {
+    let settings = state.settings.lock().await.clone();
+    auth_broker::list_login_providers(&settings).await
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub async fn login_provider(
+    state: State<'_, AppState>,
+    provider_id: String,
+) -> Result<(), AppError> {
+    let settings = state.settings.lock().await.clone();
+    auth_broker::login_provider(&settings, &provider_id).await
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub async fn logout_provider(
+    state: State<'_, AppState>,
+    provider_id: String,
+) -> Result<(), AppError> {
+    let settings = state.settings.lock().await.clone();
+    auth_broker::logout_provider(&settings, &provider_id).await
+}
+
 
 #[tauri::command(rename_all = "camelCase")]
 pub async fn save_settings(

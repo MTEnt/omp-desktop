@@ -1,7 +1,9 @@
+mod auth_broker;
 mod commands;
 mod error;
 mod memory;
 mod omp_config;
+mod provider_keys;
 mod pty;
 mod rpc;
 mod session;
@@ -46,6 +48,11 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             commands::get_settings,
+            commands::get_provider_keys,
+            commands::save_provider_keys,
+            commands::list_login_providers,
+            commands::login_provider,
+            commands::logout_provider,
             commands::get_model_roles,
             commands::list_available_models,
             commands::set_model_role,

@@ -69,6 +69,24 @@ export interface SetupStatus {
   homeDir?: string | null;
 }
 
+export interface ProviderKeyStatus {
+  name: string;
+  label: string;
+  configured: boolean;
+  masked?: string | null;
+}
+
+export interface ProviderKeyUpdate {
+  name: string;
+  value?: string | null;
+  clear?: boolean;
+}
+
+export interface LoginProvider {
+  id: string;
+  name: string;
+}
+
 export interface ExtensionUiRequest {
   id: string;
   method:

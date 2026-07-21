@@ -7,6 +7,9 @@ import type {
   AppSettings,
   SetupStatus,
   AvailableModel,
+  ProviderKeyStatus,
+  ProviderKeyUpdate,
+  LoginProvider,
   RemoteTarget,
   SshHostInfo,
   SshProbeResult,
@@ -56,6 +59,19 @@ export const api = {
 
   saveSettings: (settings: AppSettings) =>
     invoke<void>("save_settings", { settings }),
+
+  getProviderKeys: () => invoke<ProviderKeyStatus[]>("get_provider_keys"),
+
+  saveProviderKeys: (updates: ProviderKeyUpdate[]) =>
+    invoke<ProviderKeyStatus[]>("save_provider_keys", { updates }),
+
+  listLoginProviders: () => invoke<LoginProvider[]>("list_login_providers"),
+
+  loginProvider: (providerId: string) =>
+    invoke<void>("login_provider", { providerId }),
+
+  logoutProvider: (providerId: string) =>
+    invoke<void>("logout_provider", { providerId }),
 
   listSessions: () => invoke<SessionInfo[]>("list_sessions"),
 
