@@ -134,6 +134,12 @@ const EMPTY_ACTIVITY: ActivityItem[] = [];
 const EMPTY_TODOS: TodoPhase[] = [];
 const EMPTY_SUBAGENTS: SubagentInfo[] = [];
 const EMPTY_REVIEW_FILES: ReviewFile[] = [];
+const EMPTY_ATTENTION: AttentionItem[] = [];
+
+/** Last attention inbox snapshot. useSyncExternalStore requires referential
+ * stability when contents are unchanged; building a fresh array every read
+ * (even `[]`) infinite-loops React when AttentionPanel is mounted. */
+let attentionInboxCache: AttentionItem[] = EMPTY_ATTENTION;
 
 const modelRoleCwd = (state: {
   sessions: SessionInfo[];
@@ -199,11 +205,35 @@ export const selectIsActiveStreaming = (state: SessionStore): boolean =>
     ? state.streaming[state.activeSessionId] === true
     : false;
 
-export const selectAttentionInbox = (state: SessionStore): AttentionItem[] =>
-  buildAttentionInbox({
+export const selectAttentionInbox = (state: SessionStore): AttentionItem[] => {
+  const next = buildAttentionInbox({
     sessions: state.sessions,
     extensionUiRequests: state.extensionUiRequests,
   });
+  if (next.length === 0) {
+    attentionInboxCache = EMPTY_ATTENTION;
+    return EMPTY_ATTENTION;
+  }
+  const prev = attentionInboxCache;
+  if (
+    prev.length === next.length &&
+    prev.every(
+      (item, index) =>
+        item.key === next[index]!.key &&
+        item.sessionId === next[index]!.sessionId &&
+        item.sessionTitle === next[index]!.sessionTitle &&
+        item.kind === next[index]!.kind &&
+        item.title === next[index]!.title &&
+        item.detail === next[index]!.detail &&
+        item.requestId === next[index]!.requestId &&
+        item.method === next[index]!.method,
+    )
+  ) {
+    return prev;
+  }
+  attentionInboxCache = next;
+  return next;
+};
 
 const isRecord = (value: unknown): value is OmpEvent =>
   typeof value === "object" && value !== null && !Array.isArray(value);

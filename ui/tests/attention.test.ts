@@ -5,6 +5,7 @@ import {
   buildAttentionInbox,
   classifyExtensionRequest,
 } from "../src/session/attention.ts";
+import { selectAttentionInbox } from "../src/session/session-store.ts";
 import type { ExtensionUiRequest, SessionInfo } from "../src/session/types.ts";
 
 const session = (
@@ -161,5 +162,31 @@ describe("buildAttentionInbox", () => {
       ["keep"],
     );
     assert.equal(items[0]?.detail, "Proceed?");
+  });
+});
+
+describe("selectAttentionInbox", () => {
+  it("returns a stable empty snapshot across repeated reads", () => {
+    const state = {
+      sessions: [] as SessionInfo[],
+      extensionUiRequests: {} as Record<string, ExtensionUiRequest[]>,
+    };
+    // Selector only reads sessions + extensionUiRequests; cast keeps the test focused.
+    const first = selectAttentionInbox(state as never);
+    const second = selectAttentionInbox(state as never);
+    assert.equal(first, second);
+    assert.deepEqual(first, []);
+  });
+
+  it("returns a stable snapshot when inbox contents are unchanged", () => {
+    const sessions = [session({ id: "a", title: "Alpha" })];
+    const extensionUiRequests = {
+      a: [request({ id: "r1", method: "confirm", title: "OK?" })],
+    };
+    const state = { sessions, extensionUiRequests };
+    const first = selectAttentionInbox(state as never);
+    const second = selectAttentionInbox(state as never);
+    assert.equal(first, second);
+    assert.equal(first[0]?.key, "a:r1");
   });
 });
