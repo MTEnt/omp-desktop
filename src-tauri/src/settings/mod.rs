@@ -267,7 +267,7 @@ fn which_omp() -> Result<PathBuf, which::Error> {
                 return Ok(path);
             }
         }
-        return Err(which::Error::CannotFindBinaryPath);
+        Err(which::Error::CannotFindBinaryPath)
     }
     #[cfg(not(windows))]
     {

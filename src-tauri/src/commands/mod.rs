@@ -208,7 +208,7 @@ fn run_npx(args: &[&str]) -> std::io::Result<std::process::ExitStatus> {
         for arg in args {
             command.arg(arg);
         }
-        return command.status();
+        command.status()
     }
     #[cfg(not(windows))]
     {

@@ -754,7 +754,7 @@ pub fn load_recents() -> AppResult<Vec<SshRecent>> {
     }
     let raw = fs::read_to_string(path).map_err(|e| AppError::Msg(format!("read recents: {e}")))?;
     let mut items: Vec<SshRecent> = serde_json::from_str(&raw).unwrap_or_default();
-    items.sort_by(|a, b| b.last_used_ms.cmp(&a.last_used_ms));
+    items.sort_by_key(|item| std::cmp::Reverse(item.last_used_ms));
     Ok(items)
 }
 

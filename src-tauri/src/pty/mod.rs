@@ -308,7 +308,7 @@ fn local_shell() -> PathBuf {
         if let Ok(powershell) = which::which("powershell") {
             return powershell;
         }
-        return shell_from_env(None);
+        shell_from_env(None)
     }
     #[cfg(not(windows))]
     {
